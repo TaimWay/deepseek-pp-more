@@ -9,6 +9,7 @@ import {
   archiveStaleMemories,
 } from '../core/memory/store';
 import { filterMemoriesByProjectScope } from '../core/memory/scope';
+import { selectMemories, estimateTokens, getMemoryBudget } from '../core/memory/selector';
 import {
   getAllSkillSources,
   getAllSkills,
@@ -221,6 +222,7 @@ import {
 } from '../core/automation/scheduler';
 import {
   createChatSession,
+  deleteChatSession,
   createPowHeadersForPath,
   createPowHeaders,
   DEEPSEEK_FILE_UPLOAD_PATH,
@@ -235,7 +237,7 @@ import {
   buildConversationExportArtifactsCancellable,
   runConversationExport,
 } from '../core/export/service';
-import { buildPromptAugmentation } from '../core/prompt';
+import { buildPromptAugmentation, renderToolSchemas } from '../core/prompt';
 import {
   broadcastRuntimeUpdate,
   deliverRuntimeMessageBestEffort,
@@ -267,7 +269,20 @@ import { createDeepSeekRuntimeHandlers } from './background/deepseek-runtime-han
 import { createBackgroundRuntimeHandlers } from './background/background-runtime-handlers';
 import { refreshRuntimeMessageContextFromBrowserTab } from './background/runtime-message-context';
 import { refreshDeepSeekAuthFromTabs } from './background/deepseek-auth-refresh';
-import { createSyncRuntimeService } from './background/sync-runtime-service';
+import {
+  createSyncRuntimeService,
+} from './background/sync-runtime-service';
+import {
+  convertClientToolsToDescriptors,
+  createExternalApiService,
+  getExternalApiConfig,
+  getExternalApiSessions,
+  removeExternalApiSessions,
+  saveExternalApiConfig,
+  type ExternalApiConfig,
+  type ExternalApiStatus,
+  type ExternalApiToolDefinition,
+} from '../core/external-api';
 import {
   createTranslator,
   DEFAULT_LOCALE,
@@ -401,6 +416,54 @@ const syncOperationCoordinator = createSyncOperationCoordinator(syncConfigStore,
   download: syncRuntimeService.download,
   authorizationNotRequiredMessage: () => backgroundT('background.sync.authorizationNotRequired'),
 });
+const externalApiService = createExternalApiService({
+  getConfig: getExternalApiConfig,
+  getDeepSeekApiKey,
+  loadClientHeaders: loadOrRefreshClientHeaders,
+  createChatSession: (headers, signal) => createChatSession(headers, signal),
+  createPowHeaders: (headers, signal) => createPowHeaders(headers, undefined, signal),
+  uploadFile: uploadDeepSeekFile,
+  submitWebPrompt: submitPromptStreaming,
+  submitOfficialPrompt: submitOfficialDeepSeekStreaming,
+  buildPrompt: buildExternalApiPrompt,
+  executeToolCall: (call, options) =>
+    executeBackgroundRuntimeToolCall(call, 'external_api', options),
+  getToolDescriptors: () =>
+    getPromptToolDescriptors(currentBackgroundLocale, 'external_api'),
+  continueWithToolResults: (toolResults) =>
+    backgroundT('background.chat.continueWithToolResults', { toolResults }),
+  onStatusChange: (status: ExternalApiStatus) => {
+    void broadcastExternalApiStatusUpdate(status);
+  },
+  reportError: reportBackgroundStartupError,
+});
+
+async function deleteDeepSeekSessions(sessionIds: string[]): Promise<{ ok: true; deletedCount: number; failedIds?: string[] }> {
+  let headers: Record<string, string> = {};
+  try {
+    const loaded = await loadOrRefreshClientHeaders();
+    if (loaded) headers = loaded;
+  } catch {
+    headers = {};
+  }
+  let deletedCount = 0;
+  const failedIds: string[] = [];
+  for (const sessionId of sessionIds) {
+    try {
+      const ok = await deleteChatSession(sessionId, headers);
+      if (ok) {
+        deletedCount++;
+      } else {
+        failedIds.push(sessionId);
+      }
+    } catch {
+      failedIds.push(sessionId);
+    }
+  }
+  await removeExternalApiSessions(sessionIds);
+  return { ok: true, deletedCount, failedIds: failedIds.length > 0 ? failedIds : undefined };
+}
+
 const SANDBOX_OFFSCREEN_URL = 'sandbox-offscreen.html';
 const browserSandboxRuntime: SandboxToolRuntime = {
   runSandbox: (request) => runBrowserSandboxToolResult(request),
@@ -618,6 +681,7 @@ const runtimeCommandRegistry = createRuntimeCommandRegistry({
         service: chatRuntimeService,
         getOfficialApiChatConfig,
         saveOfficialApiChatConfig,
+        deleteSessions: deleteDeepSeekSessions,
       },
       conversationExport: {
         baseUrl: new URL(DEEPSEEK_HOME_URL).origin,
@@ -669,6 +733,20 @@ const runtimeCommandRegistry = createRuntimeCommandRegistry({
         addCustomScenario,
         deleteScenario,
         refreshScenarioMenus: createContextMenus,
+      },
+      externalApi: {
+        getConfig: getExternalApiConfig,
+        saveConfig: async (config) => {
+          const saved = await saveExternalApiConfig(config);
+          await externalApiService.handleConfigUpdated(saved);
+          return saved;
+        },
+        reconnect: () => externalApiService.reconnect(),
+        getStatus: () => externalApiService.getStatus(),
+        notifyStatusChanged: (status) => {
+          void broadcastExternalApiStatusUpdate(status);
+        },
+        getSessions: getExternalApiSessions,
       },
     }),
   ],
@@ -730,6 +808,8 @@ export default defineBackground(() => {
   ensureAutomationWakeAlarm().catch((error) => reportBackgroundStartupError('automation_alarm_create_failed', error));
   chatRuntimeService.reconcileInterruptedOnWake()
     .catch((error) => reportBackgroundStartupError('chat_loop_reconcile_failed', error));
+  externalApiService.start()
+    .catch((error) => reportBackgroundStartupError('external_api_start_failed', error));
   syncLocalRecoveryBarrier.ensureReady()
     .then(() => scanDueAutomationsFromWake()
       .catch((error) => reportBackgroundStartupError('automation_startup_scan_failed', error)))
@@ -785,6 +865,7 @@ export default defineBackground(() => {
 function registerAutomationAlarmListener() {
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== AUTOMATION_WAKE_ALARM_NAME) return;
+    externalApiService.ensureConnected().catch(() => {});
     syncLocalRecoveryBarrier.ensureReady()
       .then(() => scanDueAutomationsFromWake()
         .catch((error) => reportBackgroundStartupError('automation_alarm_scan_failed', error)))
@@ -1240,6 +1321,10 @@ async function broadcastConversationExportProgress(
   await broadcastToTabs({ type: 'DEEPSEEK_EXPORT_PROGRESS', progress }, excludeTabId);
 }
 
+async function broadcastExternalApiStatusUpdate(status: ExternalApiStatus, excludeTabId?: number) {
+  await broadcastToTabs({ type: 'EXTERNAL_API_STATUS_UPDATED', status }, excludeTabId);
+}
+
 async function executeBackgroundRuntimeToolCall(
   call: ToolCall,
   source: ToolExecutionTrigger,
@@ -1544,6 +1629,65 @@ async function buildSidepanelPrompt(request: ChatPromptBuildRequest): Promise<{
     forceResponseLanguage: promptSettings.forceResponseLanguage === 'auto' ? null : promptSettings.forceResponseLanguage,
   });
 
+  return { augmented, enabledDescriptors };
+}
+
+async function buildExternalApiPrompt(request: {
+  prompt: string;
+  isFirstMessage: boolean;
+  messageCount: number;
+  allowAgentTools?: boolean;
+  injectSystemInfo?: boolean;
+  enableMemory?: boolean;
+  effectiveModel?: string;
+  clientTools?: ExternalApiToolDefinition[];
+}): Promise<{
+  augmented: string;
+  enabledDescriptors: ToolDescriptor[];
+}> {
+  const allowTools = request.allowAgentTools !== false;
+  let enabledDescriptors: ToolDescriptor[] = [];
+  let toolsContext = '';
+
+  if (allowTools) {
+    const toolDescriptors = await getRuntimeToolDescriptors(currentBackgroundLocale);
+    const sidepanelDescriptors = filterSidepanelChatToolDescriptors(toolDescriptors);
+    enabledDescriptors = filterRetiredModelFacingTools(sidepanelDescriptors);
+    const clientDescriptors = convertClientToolsToDescriptors(request.clientTools);
+    const renderDescriptors = [...enabledDescriptors, ...clientDescriptors];
+    toolsContext = renderToolSchemas(renderDescriptors, currentBackgroundLocale);
+  }
+
+  const promptSettings = await getPromptInjectionSettings();
+  let memoryContext = '';
+  const memoryAllowed = request.enableMemory ?? promptSettings.memoryEnabled;
+  if (memoryAllowed) {
+    const allMemories = await getAllMemories();
+    const activeMemories = allMemories.filter((m) => m.scope !== 'project');
+    if (activeMemories.length > 0 && request.prompt.trim()) {
+      const promptTokens = estimateTokens(request.prompt);
+      const budget = getMemoryBudget(promptTokens);
+      const selected = selectMemories(request.prompt, [...activeMemories], { budget });
+      if (selected.length > 0) {
+        memoryContext = `[Relevant Memories]:\n${selected.map((m) => `- ${m.content}`).join('\n')}\n\n`;
+      }
+    }
+  }
+
+  let systemInfoContext = '';
+  if (request.injectSystemInfo !== false) {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const modelDesc = request.effectiveModel || 'DeepSeek';
+    systemInfoContext = `[Environment Context]\n- Current Time: ${timeStr}\n- Target Model: ${modelDesc}\n\n`;
+  }
+
+  let prefix = '';
+  if (systemInfoContext) prefix += systemInfoContext;
+  if (toolsContext) prefix += `[Available Tools & Functions]:\n${toolsContext}\n\n`;
+  if (memoryContext) prefix += memoryContext;
+
+  const augmented = prefix ? `${prefix}${request.prompt}` : request.prompt;
   return { augmented, enabledDescriptors };
 }
 
