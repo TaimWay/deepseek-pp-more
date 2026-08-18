@@ -266,6 +266,10 @@ import {
   type ChatPromptBuildRequest,
 } from './background/chat-runtime-service';
 import { createDeepSeekRuntimeHandlers } from './background/deepseek-runtime-handlers';
+import {
+  analyzeMultimodalMedia,
+  type MultimodalRuntimeHandlerDependencies,
+} from './background/multimodal-handlers';
 import { createBackgroundRuntimeHandlers } from './background/background-runtime-handlers';
 import { refreshRuntimeMessageContextFromBrowserTab } from './background/runtime-message-context';
 import { refreshDeepSeekAuthFromTabs } from './background/deepseek-auth-refresh';
@@ -416,6 +420,19 @@ const syncOperationCoordinator = createSyncOperationCoordinator(syncConfigStore,
   download: syncRuntimeService.download,
   authorizationNotRequiredMessage: () => backgroundT('background.sync.authorizationNotRequired'),
 });
+const multimodalHandlerDependencies: MultimodalRuntimeHandlerDependencies = {
+  getSettingsStatus: getMultimodalSettingsStatus,
+  saveSettings: saveMultimodalSettings,
+  clearSettings: clearMultimodalSettings,
+  getMcpServers: () => getAllMcpServers({ includeSecrets: false }),
+  executeToolCall: (call, options) => executeBackgroundRuntimeToolCall(
+    call,
+    'manual_chat',
+    options,
+  ),
+  broadcastToolCallHistoryUpdate,
+};
+
 const externalApiService = createExternalApiService({
   getConfig: getExternalApiConfig,
   getDeepSeekApiKey,
@@ -423,6 +440,7 @@ const externalApiService = createExternalApiService({
   createChatSession: (headers, signal) => createChatSession(headers, signal),
   createPowHeaders: (headers, signal) => createPowHeaders(headers, undefined, signal),
   uploadFile: uploadDeepSeekFile,
+  analyzeMultimodalMedia: (request) => analyzeMultimodalMedia(request, multimodalHandlerDependencies),
   submitWebPrompt: submitPromptStreaming,
   submitOfficialPrompt: submitOfficialDeepSeekStreaming,
   buildPrompt: buildExternalApiPrompt,
@@ -665,18 +683,7 @@ const runtimeCommandRegistry = createRuntimeCommandRegistry({
         getChatAuthStatus,
         broadcastChatAuthStatus,
       },
-      multimodal: {
-        getSettingsStatus: getMultimodalSettingsStatus,
-        saveSettings: saveMultimodalSettings,
-        clearSettings: clearMultimodalSettings,
-        getMcpServers: () => getAllMcpServers({ includeSecrets: false }),
-        executeToolCall: (call, options) => executeBackgroundRuntimeToolCall(
-          call,
-          'manual_chat',
-          options,
-        ),
-        broadcastToolCallHistoryUpdate,
-      },
+      multimodal: multimodalHandlerDependencies,
       chat: {
         service: chatRuntimeService,
         getOfficialApiChatConfig,

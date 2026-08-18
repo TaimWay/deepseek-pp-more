@@ -61,7 +61,7 @@ export function createMultimodalRuntimeHandlers(
   ]);
 }
 
-async function analyzeMultimodalMedia(
+export async function analyzeMultimodalMedia(
   request: MultimodalMediaAnalyzeRequest,
   dependencies: MultimodalRuntimeHandlerDependencies,
 ): Promise<MultimodalMediaAnalyzeResponse> {

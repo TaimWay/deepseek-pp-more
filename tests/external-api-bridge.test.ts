@@ -18,6 +18,12 @@ import type {
 } from '../core/deepseek/official-api';
 import { renderToolSchemas } from '../core/prompt';
 import type { ToolCall, ToolDescriptor } from '../core/tool/types';
+import { getMultimodalSettingsStatus } from '../core/multimodal/settings';
+import type { MultimodalMediaAnalyzeRequest } from '../core/multimodal/media';
+
+vi.mock('../core/multimodal/settings', () => ({
+  getMultimodalSettingsStatus: vi.fn(),
+}));
 
 class MockWebSocket {
   static OPEN = 1;
@@ -56,6 +62,14 @@ describe('External API Service Bridge', () => {
 
   beforeEach(() => {
     mockConfig = { ...DEFAULT_EXTERNAL_API_CONFIG };
+    vi.mocked(getMultimodalSettingsStatus).mockResolvedValue({
+      openaiConfigured: false,
+      geminiConfigured: false,
+      openaiImageModel: '',
+      geminiVideoModel: '',
+      openaiBaseUrl: '',
+      geminiBaseUrl: '',
+    });
   });
 
   afterEach(() => {
@@ -729,6 +743,178 @@ describe('External API Service Bridge', () => {
     const bridgeMessage: BridgeFromExtensionMessage = event;
     expect(bridgeMessage.type).toBe('TOOL_EVENT');
     expect(bridgeMessage.tool_name).toBe('get_weather');
+  });
+
+  it('official path routes image_url media through the multimodal analysis dependency', async () => {
+    const imageDataUrl = 'data:image/png;base64,iVBORw0KGgo=';
+    const analyzeStub = vi.fn(async (request: MultimodalMediaAnalyzeRequest) => ({
+      ok: true as const,
+      analyses: [
+        {
+          id: 'images:external-media-image-0',
+          kind: 'image' as const,
+          media: [
+            {
+              id: 'external-media-image-0',
+              kind: 'image' as const,
+              name: 'image-0.png',
+              mimeType: 'image/png',
+              sizeBytes: 8,
+            },
+          ],
+          result: { ok: true, summary: 'ok', output: { text: 'The image shows a red fox.' } },
+        },
+      ],
+    }));
+    vi.mocked(getMultimodalSettingsStatus).mockResolvedValue({
+      openaiConfigured: true,
+      geminiConfigured: false,
+      openaiImageModel: 'gpt-4o-mini',
+      geminiVideoModel: '',
+      openaiBaseUrl: '',
+      geminiBaseUrl: '',
+    });
+    const deps = createTestDependencies({ analyzeMultimodalMedia: analyzeStub });
+    const service = createExternalApiService(deps);
+
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const request: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-official-media',
+      model: 'deepseek-v4-flash',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'What is in this image?' },
+            { type: 'image_url', image_url: { url: imageDataUrl } },
+          ],
+        },
+      ],
+      stream: false,
+      thinking: false,
+      reasoning_effort: 'high',
+    };
+
+    activeMockSocket!.simulateServerMessage(request);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(analyzeStub).toHaveBeenCalledTimes(1);
+    expect(analyzeStub).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: 'What is in this image?' }),
+    );
+    const receivedMedia = analyzeStub.mock.calls[0][0].media;
+    expect(receivedMedia).toHaveLength(1);
+    expect(receivedMedia[0]).toEqual(
+      expect.objectContaining({
+        kind: 'image',
+        mimeType: 'image/png',
+        sizeBytes: 8,
+        dataUrl: imageDataUrl,
+      }),
+    );
+
+    expect(deps.submitOfficialPrompt).toHaveBeenCalledTimes(1);
+    const firstUserMessage = deps.submitOfficialPrompt.mock.calls[0][0].messages[0];
+    expect(firstUserMessage.content).toContain('[DeepSeek++ automatic multimodal MCP analysis]');
+    expect(firstUserMessage.content).toContain('The image shows a red fox.');
+    expect(firstUserMessage.content).toContain('What is in this image?');
+    // Media bytes must never reach the official DeepSeek API messages.
+    expect(firstUserMessage.content).not.toContain('iVBORw0KGgo=');
+
+    service.stop();
+  });
+
+  it('official path sends CHAT_ERROR multimodal_unavailable when allowMultimodal is disabled', async () => {
+    mockConfig.allowMultimodal = false;
+    const deps = createTestDependencies();
+    const service = createExternalApiService(deps);
+
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const request: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-media-disabled',
+      model: 'deepseek-v4-flash',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Read the attached image.' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } },
+          ],
+        },
+      ],
+      stream: false,
+      thinking: false,
+      reasoning_effort: 'high',
+    };
+
+    activeMockSocket!.simulateServerMessage(request);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(deps.submitOfficialPrompt).not.toHaveBeenCalled();
+
+    const sent = activeMockSocket!.sentMessages.map((m) => JSON.parse(m) as BridgeFromExtensionMessage);
+    const error = sent.find(
+      (m): m is Extract<BridgeFromExtensionMessage, { type: 'CHAT_ERROR' }> => m.type === 'CHAT_ERROR',
+    );
+    expect(error).toBeDefined();
+    expect(error?.code).toBe('multimodal_unavailable');
+    const done = sent.find((m) => m.type === 'CHAT_DONE');
+    expect(done).toBeUndefined();
+
+    service.stop();
+  });
+
+  it('official path fails explicitly when image parts exist but no multimodal provider is configured', async () => {
+    const analyzeStub = vi.fn(async () => ({
+      ok: true as const,
+      analyses: [],
+    }));
+    const deps = createTestDependencies({ analyzeMultimodalMedia: analyzeStub });
+    const service = createExternalApiService(deps);
+
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const request: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-media-no-provider',
+      model: 'deepseek-v4-flash',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Read the attached image.' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,iVBORw0KGgo=' } },
+          ],
+        },
+      ],
+      stream: false,
+      thinking: false,
+      reasoning_effort: 'high',
+    };
+
+    activeMockSocket!.simulateServerMessage(request);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(deps.submitOfficialPrompt).not.toHaveBeenCalled();
+    expect(analyzeStub).not.toHaveBeenCalled();
+
+    const sent = activeMockSocket!.sentMessages.map((m) => JSON.parse(m) as BridgeFromExtensionMessage);
+    const error = sent.find(
+      (m): m is Extract<BridgeFromExtensionMessage, { type: 'CHAT_ERROR' }> => m.type === 'CHAT_ERROR',
+    );
+    expect(error).toBeDefined();
+    expect(error?.code).toBe('multimodal_unavailable');
+    const done = sent.find((m) => m.type === 'CHAT_DONE');
+    expect(done).toBeUndefined();
+
+    service.stop();
   });
 });
 

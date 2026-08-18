@@ -7,6 +7,14 @@ import type {
 } from '../deepseek/official-api';
 import type { OfficialDeepSeekModel, OfficialDeepSeekReasoningEffort } from '../chat/official-api-config-contract';
 import {
+  buildMultimodalAnalysisPrompt,
+  type MultimodalMediaAnalyzeRequest,
+  type MultimodalMediaAnalyzeResponse,
+  type MultimodalMediaInput,
+  type MultimodalMediaKind,
+} from '../multimodal';
+import { getMultimodalSettingsStatus } from '../multimodal/settings';
+import {
   DEFAULT_EXTERNAL_API_SESSION_KEY,
   type BridgeFromExtensionMessage,
   type BridgeToExtensionChatRequest,
@@ -69,6 +77,7 @@ export interface ExternalApiServiceDependencies {
     },
     signal?: AbortSignal,
   ): Promise<DeepSeekUploadedFile | null>;
+  analyzeMultimodalMedia?(request: MultimodalMediaAnalyzeRequest): Promise<MultimodalMediaAnalyzeResponse>;
   submitWebPrompt(
     input: {
       chatSessionId: string;
@@ -530,25 +539,146 @@ export function createExternalApiService(
     return String(content);
   }
 
+  function parseDataUrl(dataUrl: string): { mimeType: string; base64: string } | null {
+    const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
+    if (!match) return null;
+    return { mimeType: match[1].toLowerCase(), base64: match[2] };
+  }
+
   function dataUrlToBlob(dataUrl: string): { blob: Blob; filename: string } | null {
+    const parsed = parseDataUrl(dataUrl);
+    if (!parsed) return null;
     try {
-      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-      if (!match) return null;
-      const mimeType = match[1] || 'image/png';
-      const base64Data = match[2];
-      const byteCharacters = atob(base64Data);
+      const byteCharacters = atob(parsed.base64);
       const byteNumbers = new Array(byteCharacters.length);
       for (let i = 0; i < byteCharacters.length; i++) {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
       const byteArray = new Uint8Array(byteNumbers);
-      const ext = mimeType.split('/')[1] || 'png';
+      const ext = parsed.mimeType.split('/')[1] || 'png';
       return {
-        blob: new Blob([byteArray], { type: mimeType }),
+        blob: new Blob([byteArray], { type: parsed.mimeType }),
         filename: `upload_${Date.now()}.${ext}`,
       };
     } catch {
       return null;
+    }
+  }
+
+  interface MultimodalMediaCollection {
+    media: MultimodalMediaInput[];
+    hasUnroutableMedia: boolean;
+  }
+
+  interface MultimodalMediaPartInput {
+    id: string;
+    kind: MultimodalMediaKind;
+    name: string;
+    mimeType: string;
+    base64Body: string;
+    dataUrl?: string;
+  }
+
+  function collectMultimodalMediaInputs(messages: ExternalApiChatMessage[]): MultimodalMediaCollection {
+    const media: MultimodalMediaInput[] = [];
+    let hasUnroutableMedia = false;
+    let imageIndex = 0;
+    let fileIndex = 0;
+
+    for (const msg of messages) {
+      if (!Array.isArray(msg.content)) continue;
+      for (const part of msg.content) {
+        if (!part || typeof part !== 'object') continue;
+        if (part.type === 'image_url') {
+          const url = (part as ExternalApiImageUrlContentPart).image_url?.url;
+          const parsed = url ? parseDataUrl(url) : null;
+          if (!parsed || !parsed.mimeType.startsWith('image/')) {
+            hasUnroutableMedia = true;
+            continue;
+          }
+          const index = imageIndex++;
+          const input = buildMultimodalMediaPartInput({
+            id: `external-media-image-${index}`,
+            kind: 'image',
+            name: `image-${index}.${extensionFromMime(parsed.mimeType)}`,
+            mimeType: parsed.mimeType,
+            base64Body: parsed.base64,
+            dataUrl: url,
+          });
+          if (!input) hasUnroutableMedia = true;
+          else media.push(input);
+        } else if (part.type === 'file' || part.type === 'input_file') {
+          const file = (part as ExternalApiFileContentPart).file;
+          if (!file || typeof file.data !== 'string' || !file.data) {
+            hasUnroutableMedia = true;
+            continue;
+          }
+          let mimeType = (file.mime_type || '').toLowerCase();
+          let base64Body = file.data;
+          let dataUrl: string | undefined;
+          if (file.data.startsWith('data:')) {
+            const parsed = parseDataUrl(file.data);
+            if (!parsed) {
+              hasUnroutableMedia = true;
+              continue;
+            }
+            mimeType = parsed.mimeType;
+            base64Body = parsed.base64;
+            dataUrl = file.data;
+          }
+          if (!mimeType.startsWith('image/') && !mimeType.startsWith('video/')) {
+            hasUnroutableMedia = true;
+            continue;
+          }
+          const kind: MultimodalMediaKind = mimeType.startsWith('image/') ? 'image' : 'video';
+          const index = fileIndex++;
+          const input = buildMultimodalMediaPartInput({
+            id: `external-media-file-${index}`,
+            kind,
+            name: file.name || `${kind}-${index}.${extensionFromMime(mimeType)}`,
+            mimeType,
+            base64Body,
+            dataUrl: dataUrl ?? (kind === 'image' ? `data:${mimeType};base64,${base64Body}` : undefined),
+          });
+          if (!input) hasUnroutableMedia = true;
+          else media.push(input);
+        }
+      }
+    }
+    return { media, hasUnroutableMedia };
+  }
+
+  function buildMultimodalMediaPartInput(part: MultimodalMediaPartInput): MultimodalMediaInput | null {
+    const sizeBytes = base64DecodedLength(part.base64Body);
+    if (sizeBytes === null) return null;
+    return {
+      id: part.id,
+      kind: part.kind,
+      name: part.name,
+      mimeType: part.mimeType,
+      sizeBytes,
+      dataUrl: part.kind === 'image' ? part.dataUrl : undefined,
+      base64Data: part.kind === 'video' ? part.base64Body : undefined,
+    };
+  }
+
+  function base64DecodedLength(value: string): number | null {
+    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) return null;
+    const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+    return Math.floor(value.length / 4) * 3 - padding;
+  }
+
+  function extensionFromMime(mimeType: string): string {
+    const ext = mimeType.split('/')[1];
+    return ext && /^[a-z0-9]{1,10}$/.test(ext) ? ext : 'bin';
+  }
+
+  async function isMultimodalProviderConfigured(): Promise<boolean> {
+    try {
+      const status = await getMultimodalSettingsStatus();
+      return Boolean(status.openaiConfigured || status.geminiConfigured);
+    } catch {
+      return false;
     }
   }
 
@@ -630,21 +760,59 @@ export function createExternalApiService(
     let availableDescriptors: ToolDescriptor[] = [...builtInDescriptors, ...clientDescriptors];
     let messages = mapMessagesToOfficialApi(request.messages);
 
+    const firstUserIndex = messages.findIndex((m) => m.role === 'user');
+    const systemMessages = request.messages
+      .filter((m) => m.role === 'system')
+      .map((m) => extractMessageText(m.content))
+      .filter(Boolean)
+      .join('\n\n');
+    const firstUserText =
+      extractMessageText(request.messages.find((m) => m.role === 'user')?.content) || '';
+
+    // The official DeepSeek API has no image input, so media parts are routed
+    // through the existing multimodal analysis pipeline and the analysis text
+    // is prepended to the first user message. Media that cannot be routed on
+    // this backend fails explicitly instead of being silently dropped.
+    let effectiveFirstUserText = firstUserText;
+    const mediaCollection = collectMultimodalMediaInputs(request.messages);
+    if (mediaCollection.media.length > 0 || mediaCollection.hasUnroutableMedia) {
+      const analysisAvailable =
+        callPolicy.allowMultimodal &&
+        !mediaCollection.hasUnroutableMedia &&
+        Boolean(dependencies.analyzeMultimodalMedia) &&
+        (await isMultimodalProviderConfigured());
+      if (!analysisAvailable || mediaCollection.media.length === 0) {
+        sendToRelay({
+          type: 'CHAT_ERROR',
+          id: request.id,
+          error:
+            'Multimodal media is not supported on the official API backend without a configured multimodal provider.',
+          code: 'multimodal_unavailable',
+        });
+        return;
+      }
+      const analysisResponse = await dependencies.analyzeMultimodalMedia!({
+        prompt: firstUserText,
+        media: mediaCollection.media,
+      });
+      if (!analysisResponse.ok) {
+        sendToRelay({
+          type: 'CHAT_ERROR',
+          id: request.id,
+          error: analysisResponse.error || 'Multimodal media analysis failed.',
+          code: 'multimodal_analysis_failed',
+        });
+        return;
+      }
+      effectiveFirstUserText = buildMultimodalAnalysisPrompt(firstUserText, analysisResponse.analyses);
+    }
+
     // First-turn prompt augmentation mirrors the web path: system info,
     // built-in + client tool schemas, and memory when enabled are injected
     // into the first user message before it reaches the model.
-    const firstUserIndex = messages.findIndex((m) => m.role === 'user');
     if (dependencies.buildPrompt && firstUserIndex >= 0) {
-      const systemMessages = request.messages
-        .filter((m) => m.role === 'system')
-        .map((m) => extractMessageText(m.content))
-        .filter(Boolean)
-        .join('\n\n');
-      const firstUserText =
-        extractMessageText(request.messages.find((m) => m.role === 'user')?.content) || '';
-
       const buildRes = await dependencies.buildPrompt({
-        prompt: firstUserText,
+        prompt: effectiveFirstUserText,
         isFirstMessage: true,
         messageCount: 1,
         allowAgentTools: callPolicy.allowAgentTools,
@@ -662,6 +830,13 @@ export function createExternalApiService(
         ...buildRes.enabledDescriptors,
         ...clientDescriptors,
       ];
+    } else if (firstUserIndex >= 0 && effectiveFirstUserText !== firstUserText) {
+      messages[firstUserIndex] = {
+        role: 'user',
+        content: systemMessages
+          ? `[System Instruction]:\n${systemMessages}\n\n${effectiveFirstUserText}`
+          : effectiveFirstUserText,
+      };
     }
 
     let stepCount = 0;
