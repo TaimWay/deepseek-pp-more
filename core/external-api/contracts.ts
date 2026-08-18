@@ -2,6 +2,16 @@ export const DEFAULT_EXTERNAL_API_HOST = '127.0.0.1';
 export const DEFAULT_EXTERNAL_API_RELAY_URL = 'ws://127.0.0.1:3000/ws';
 export const DEFAULT_EXTERNAL_API_PORT = 3000;
 
+// Single authoritative model catalog for the external API surface: service
+// handshake, relay default list, and settings UI all consume this constant.
+export const EXTERNAL_API_MODEL_CATALOG = [
+  'deepseek-v4-flash',
+  'deepseek-v4-pro',
+  'deepseek-v4-vision',
+  'deepseek-chat',
+  'deepseek-reasoner',
+] as const;
+
 export type ExternalApiKeyMode = 'full_agent' | 'proxy_only';
 
 export interface ExternalApiKey {

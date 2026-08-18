@@ -16,6 +16,7 @@ import {
 import { getMultimodalSettingsStatus } from '../multimodal/settings';
 import {
   DEFAULT_EXTERNAL_API_SESSION_KEY,
+  EXTERNAL_API_MODEL_CATALOG,
   type BridgeFromExtensionMessage,
   type BridgeToExtensionChatRequest,
   type BridgeToExtensionMessage,
@@ -140,13 +141,6 @@ export interface ResolvedCallPolicy {
   effectiveBackend: ExternalApiBackend;
 }
 
-const SUPPORTED_MODELS = [
-  'deepseek-v4-flash',
-  'deepseek-v4-pro',
-  'deepseek-chat',
-  'deepseek-reasoner',
-];
-
 const RECONNECT_INTERVALS_MS = [1000, 2000, 4000, 8000];
 const HEARTBEAT_INTERVAL_MS = 15000;
 const STREAM_STALL_TIMEOUT_MS = 45000;
@@ -178,6 +172,63 @@ export function convertClientToolsToDescriptors(tools?: ExternalApiToolDefinitio
       risk: 'low',
     },
   }));
+}
+
+export class ExternalApiModelError extends Error {
+  readonly code = 'model_not_supported';
+
+  constructor(model: string) {
+    super(`Requested model "${model}" is not supported by the external API.`);
+    this.name = 'ExternalApiModelError';
+  }
+}
+
+export interface ResolvedDeepSeekModelParams {
+  webModelType: string | null;
+  thinkingEnabled: boolean;
+  officialModel: OfficialDeepSeekModel;
+}
+
+export function resolveDeepSeekModelParams(
+  requestedModel?: string,
+  explicitThinking?: boolean,
+): ResolvedDeepSeekModelParams {
+  const modelLower = (requestedModel || '').toLowerCase().trim();
+  let webModelType: string | null = null;
+  let thinkingEnabled = explicitThinking ?? false;
+  let officialModel: OfficialDeepSeekModel = 'deepseek-v4-flash';
+
+  if (
+    modelLower.includes('pro') ||
+    modelLower.includes('reasoner') ||
+    modelLower.includes('r1') ||
+    modelLower.includes('expert')
+  ) {
+    webModelType = 'expert';
+    thinkingEnabled = true;
+    officialModel = 'deepseek-v4-pro';
+  } else if (
+    modelLower.includes('vision') ||
+    modelLower.includes('image') ||
+    modelLower.includes('multimodal')
+  ) {
+    webModelType = 'vision';
+  } else if (
+    modelLower === 'deepseek-v4-flash' ||
+    modelLower === 'deepseek-chat' ||
+    modelLower === 'chat'
+  ) {
+    webModelType = null;
+    officialModel = 'deepseek-v4-flash';
+  } else {
+    throw new ExternalApiModelError(requestedModel || '');
+  }
+
+  if (explicitThinking !== undefined) {
+    thinkingEnabled = explicitThinking;
+  }
+
+  return { webModelType, thinkingEnabled, officialModel };
 }
 
 export function createExternalApiService(
@@ -347,7 +398,7 @@ export function createExternalApiService(
             version: '1.14.0',
             has_deepseek_auth: Boolean(clientHeaders),
             has_official_api_key: Boolean(apiKey),
-            supported_models: SUPPORTED_MODELS,
+            supported_models: [...EXTERNAL_API_MODEL_CATALOG],
             authorized_api_keys: authorizedKeys,
           });
 
@@ -494,7 +545,7 @@ export function createExternalApiService(
           type: 'CHAT_ERROR',
           id: request.id,
           error: errorMessage,
-          code: 'stream_error',
+          code: err instanceof ExternalApiModelError ? err.code : 'stream_error',
         });
       }
     } finally {
@@ -680,50 +731,6 @@ export function createExternalApiService(
     } catch {
       return false;
     }
-  }
-
-  function resolveDeepSeekModelParams(
-    requestedModel?: string,
-    explicitThinking?: boolean,
-  ): {
-    webModelType: string | null;
-    thinkingEnabled: boolean;
-    officialModel: OfficialDeepSeekModel;
-  } {
-    const modelLower = (requestedModel || '').toLowerCase().trim();
-    let webModelType: string | null = null;
-    let thinkingEnabled = explicitThinking ?? false;
-    let officialModel: OfficialDeepSeekModel = 'deepseek-v4-flash';
-
-    if (
-      modelLower.includes('pro') ||
-      modelLower.includes('reasoner') ||
-      modelLower.includes('r1') ||
-      modelLower.includes('expert')
-    ) {
-      webModelType = 'expert';
-      thinkingEnabled = true;
-      officialModel = 'deepseek-v4-pro';
-    } else if (
-      modelLower.includes('vision') ||
-      modelLower.includes('image') ||
-      modelLower.includes('multimodal')
-    ) {
-      webModelType = 'vision';
-    } else if (
-      modelLower === 'deepseek-v4-flash' ||
-      modelLower === 'deepseek-chat' ||
-      modelLower === 'chat'
-    ) {
-      webModelType = null;
-      officialModel = 'deepseek-v4-flash';
-    }
-
-    if (explicitThinking !== undefined) {
-      thinkingEnabled = explicitThinking;
-    }
-
-    return { webModelType, thinkingEnabled, officialModel };
   }
 
   function serializeToolExecutions(executions: readonly ExternalApiToolExecutionRecord[]): string {
@@ -1032,6 +1039,10 @@ export function createExternalApiService(
     callPolicy: ResolvedCallPolicy,
     signal: AbortSignal,
   ) {
+    const { webModelType, thinkingEnabled } = resolveDeepSeekModelParams(
+      callPolicy.effectiveModel,
+      request.thinking,
+    );
     const headers = await dependencies.loadClientHeaders();
     if (!headers) {
       throw new Error(
@@ -1125,10 +1136,6 @@ export function createExternalApiService(
       }
     }
 
-    const { webModelType, thinkingEnabled } = resolveDeepSeekModelParams(
-      callPolicy.effectiveModel,
-      request.thinking,
-    );
     const effectiveModelType = hasImages && callPolicy.allowMultimodal ? 'vision' : webModelType;
 
     const clientDescriptors = convertClientToolsToDescriptors(request.tools);

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
   DEFAULT_EXTERNAL_API_CONFIG,
+  EXTERNAL_API_MODEL_CATALOG,
   type BridgeFromExtensionMessage,
   type BridgeFromExtensionToolEvent,
   type BridgeToExtensionChatRequest,
@@ -10,11 +11,13 @@ import {
 import {
   convertClientToolsToDescriptors,
   createExternalApiService,
+  resolveDeepSeekModelParams,
   type ExternalApiPromptBuildRequest,
 } from '../core/external-api/service';
-import type {
-  OfficialDeepSeekCallbacks,
-  SubmitOfficialDeepSeekInput,
+import {
+  submitOfficialDeepSeekStreaming,
+  type OfficialDeepSeekCallbacks,
+  type SubmitOfficialDeepSeekInput,
 } from '../core/deepseek/official-api';
 import { renderToolSchemas } from '../core/prompt';
 import type { ToolCall, ToolDescriptor } from '../core/tool/types';
@@ -916,5 +919,174 @@ describe('External API Service Bridge', () => {
 
     service.stop();
   });
+
+  it('resolveDeepSeekModelParams maps deepseek-v4-pro to web expert + thinking and keeps aliases', () => {
+    // Contract: declaring deepseek-v4-pro must yield web expert mode and the
+    // official deepseek-v4-pro id on the wire (never a silent flash fallback).
+    expect(resolveDeepSeekModelParams('deepseek-v4-pro')).toEqual({
+      webModelType: 'expert',
+      thinkingEnabled: true,
+      officialModel: 'deepseek-v4-pro',
+    });
+    // Aliases stay unchanged.
+    expect(resolveDeepSeekModelParams('deepseek-v4-flash')).toEqual({
+      webModelType: null,
+      thinkingEnabled: false,
+      officialModel: 'deepseek-v4-flash',
+    });
+    expect(resolveDeepSeekModelParams('deepseek-v4-vision')).toEqual({
+      webModelType: 'vision',
+      thinkingEnabled: false,
+      officialModel: 'deepseek-v4-flash',
+    });
+    expect(resolveDeepSeekModelParams('deepseek-chat')).toEqual({
+      webModelType: null,
+      thinkingEnabled: false,
+      officialModel: 'deepseek-v4-flash',
+    });
+    expect(resolveDeepSeekModelParams('deepseek-reasoner')).toEqual({
+      webModelType: 'expert',
+      thinkingEnabled: true,
+      officialModel: 'deepseek-v4-pro',
+    });
+  });
+
+  it('official path emits model deepseek-v4-pro in the request body', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => createSseResponse([
+      'data: {"choices":[{"delta":{"content":"Pro reply"},"finish_reason":null}]}',
+      'data: {"choices":[{"delta":{"content":""},"finish_reason":"stop"}]}',
+      'data: [DONE]',
+    ].join('\n\n')));
+    const deps = createTestDependencies({
+      submitOfficialPrompt: vi.fn((input, callbacks, signal) =>
+        submitOfficialDeepSeekStreaming({ ...input, fetchImpl }, callbacks, signal),
+      ),
+    });
+    const service = createExternalApiService(deps);
+
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const request: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-v4-pro-official',
+      model: 'deepseek-v4-pro',
+      messages: [{ role: 'user', content: 'Hello from pro' }],
+      stream: false,
+      thinking: true,
+      reasoning_effort: 'high',
+    };
+
+    activeMockSocket!.simulateServerMessage(request);
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const init = fetchImpl.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(init.body as string)).toMatchObject({
+      model: 'deepseek-v4-pro',
+      thinking: { type: 'enabled' },
+    });
+
+    service.stop();
+  });
+
+  it('web path receives modelType expert and thinking for deepseek-v4-pro', async () => {
+    const deps = createTestDependencies({
+      getDeepSeekApiKey: vi.fn(async () => null),
+    });
+    const service = createExternalApiService(deps);
+
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const request: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-v4-pro-web',
+      model: 'deepseek-v4-pro',
+      messages: [{ role: 'user', content: 'Hello from pro' }],
+      stream: false,
+      thinking: true,
+      reasoning_effort: 'high',
+    };
+
+    activeMockSocket!.simulateServerMessage(request);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(deps.submitWebPrompt).toHaveBeenCalledTimes(1);
+    const input = deps.submitWebPrompt.mock.calls[0][0];
+    expect(input.modelType).toBe('expert');
+    expect(input.thinkingEnabled).toBe(true);
+
+    service.stop();
+  });
+
+  it('handshake advertises the full model catalog including deepseek-v4-vision', async () => {
+    const deps = createTestDependencies();
+    const service = createExternalApiService(deps);
+
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const sent = activeMockSocket!.sentMessages.map((m) => JSON.parse(m) as BridgeFromExtensionMessage);
+    const handshakeAck = sent.find((m) => m.type === 'HANDSHAKE_ACK');
+    expect(handshakeAck).toBeDefined();
+    expect(handshakeAck?.supported_models).toEqual([...EXTERNAL_API_MODEL_CATALOG]);
+    expect(handshakeAck?.supported_models).toContain('deepseek-v4-vision');
+    expect(handshakeAck?.supported_models).toHaveLength(5);
+
+    service.stop();
+  });
+
+  it('unmappable model fails explicitly with CHAT_ERROR and never falls back', async () => {
+    const deps = createTestDependencies({
+      getDeepSeekApiKey: vi.fn(async () => null),
+    });
+    const service = createExternalApiService(deps);
+
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const request: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-unknown-model',
+      model: 'gpt-4o',
+      messages: [{ role: 'user', content: 'Hello' }],
+      stream: false,
+      thinking: true,
+      reasoning_effort: 'high',
+    };
+
+    activeMockSocket!.simulateServerMessage(request);
+    await new Promise((r) => setTimeout(r, 20));
+
+    // No silent fallback to any backend.
+    expect(deps.submitWebPrompt).not.toHaveBeenCalled();
+    expect(deps.submitOfficialPrompt).not.toHaveBeenCalled();
+    expect(deps.createChatSession).not.toHaveBeenCalled();
+
+    const sent = activeMockSocket!.sentMessages.map((m) => JSON.parse(m) as BridgeFromExtensionMessage);
+    const error = sent.find(
+      (m): m is Extract<BridgeFromExtensionMessage, { type: 'CHAT_ERROR' }> => m.type === 'CHAT_ERROR',
+    );
+    expect(error).toBeDefined();
+    expect(error?.code).toBe('model_not_supported');
+    expect(error?.error).toContain('gpt-4o');
+    const done = sent.find((m) => m.type === 'CHAT_DONE');
+    expect(done).toBeUndefined();
+
+    service.stop();
+  });
 });
+
+function createSseResponse(text: string): Response {
+  const encoder = new TextEncoder();
+  return new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(text));
+      controller.close();
+    },
+  }), {
+    headers: { 'content-type': 'text/event-stream' },
+  });
+}
 
