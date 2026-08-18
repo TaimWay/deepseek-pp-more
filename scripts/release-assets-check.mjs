@@ -29,9 +29,9 @@ const bundledSkillGroups = {
 
 const extensionZips = ['chrome', 'edge', 'firefox'].map((browser) => ({
   browser,
-  path: resolve(distDir, `deepseek-plus-plus-${version}-${browser}.zip`),
+  path: resolve(distDir, `deepseek-pp-more-${version}-${browser}.zip`),
 }));
-const sourceZip = resolve(distDir, `deepseek-plus-plus-${version}-sources.zip`);
+const sourceZip = resolve(distDir, `deepseek-pp-more-${version}-sources.zip`);
 
 for (const zip of extensionZips) {
   assertFile(zip.path, `${zip.browser} zip`);

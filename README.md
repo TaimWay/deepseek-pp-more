@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="assets/readme-header.png" width="860" alt="DeepSeek++ DeepSeek 浏览器插件和 AI Agent 工作台">
+  <img src="assets/readme-header.png" width="860" alt="DeepSeek++ More DeepSeek 浏览器插件和 AI Agent 工作台">
 </p>
 
-<h1 align="center">DeepSeek++</h1>
+<h1 align="center">DeepSeek++ More</h1>
 
 <p align="center">
-  <strong>DeepSeek++：把 DeepSeek 网页版扩展成支持中英文体验、记忆、项目、Skill、MCP、多模态媒体、浏览器控制、保存项、产物下载、对话导出和自动化的 AI Agent 工作台</strong>
+  <strong>DeepSeek++ More：把 DeepSeek 网页版扩展成支持中英文体验、记忆、项目、Skill、MCP、多模态媒体、浏览器控制、保存项、产物下载、对话导出和自动化的 AI Agent 工作台</strong>
 </p>
 
 <p align="center">

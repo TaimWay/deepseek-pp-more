@@ -14,7 +14,7 @@ if (typeof version !== 'string' || version.length === 0) {
 }
 
 const distDir = resolve(root, 'dist');
-const output = resolve(distDir, `deepseek-plus-plus-${version}-sources.zip`);
+const output = resolve(distDir, `deepseek-pp-more-${version}-sources.zip`);
 
 execFileSync('git', ['rev-parse', '--is-inside-work-tree'], { cwd: root, stdio: 'ignore' });
 
