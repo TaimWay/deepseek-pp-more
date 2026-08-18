@@ -129,6 +129,28 @@ export const DEFAULT_EXTERNAL_API_CONFIG: ExternalApiConfig = {
   enableMemory: false,
 };
 
+export const EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE =
+  'Cannot start the external API relay on a non-loopback host: requires at least one enabled API key.';
+
+export function isLoopbackHost(host: string | null | undefined): boolean {
+  const normalized = (host ?? '').trim().toLowerCase();
+  return normalized === '' || normalized === '127.0.0.1' || normalized === 'localhost' || normalized === '::1';
+}
+
+export function hasEnabledExternalApiKeys(
+  config: Pick<ExternalApiConfig, 'apiKeys'> & { apiKey?: string },
+): boolean {
+  return config.apiKeys.some((key) => key.enabled) || Boolean(config.apiKey && config.apiKey.trim());
+}
+
+export function getFirstAuthorizedApiKey(
+  config: Pick<ExternalApiConfig, 'apiKeys'> & { apiKey?: string },
+): string {
+  const active = config.apiKeys.filter((key) => key.enabled).map((key) => key.key);
+  if (active.length > 0) return active[0];
+  return (config.apiKey || '').trim();
+}
+
 export interface ExternalApiStatus {
   enabled: boolean;
   connected: boolean;

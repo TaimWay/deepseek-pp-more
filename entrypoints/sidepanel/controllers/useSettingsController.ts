@@ -44,6 +44,25 @@ import {
   settingsSyncRuntimeController,
   type SyncRuntimeCommandType,
 } from './settings-controller';
+import {
+  DEFAULT_EXTERNAL_API_CONFIG,
+  DEFAULT_EXTERNAL_API_HOST,
+  DEFAULT_EXTERNAL_API_PORT,
+  EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE,
+  getFirstAuthorizedApiKey,
+  hasEnabledExternalApiKeys,
+  isLoopbackHost,
+  type ExternalApiConfig,
+  type ExternalApiKey,
+  type ExternalApiProcessStatus,
+  type ExternalApiStatus,
+} from '../../../core/external-api/contracts';
+import { createExternalApiKey } from '../../../core/external-api/store';
+import {
+  getRelayProcessStatus,
+  startRelayProcess,
+  stopRelayProcess,
+} from '../../../core/external-api/process';
 import { libraryController } from './library-controller';
 
 /**
@@ -179,6 +198,27 @@ export function useSettingsController() {
   const [multimodalStatus, setMultimodalStatus] = useState<MultimodalStatus>('idle');
   const [multimodalMessage, setMultimodalMessage] = useState('');
 
+  // --- external api relay ---
+  const [externalApiConfig, setExternalApiConfigState] = useState<ExternalApiConfig>(DEFAULT_EXTERNAL_API_CONFIG);
+  const [externalApiStatus, setExternalApiStatus] = useState<ExternalApiStatus>({
+    enabled: true,
+    connected: false,
+    relayWsUrl: DEFAULT_EXTERNAL_API_CONFIG.relayWsUrl,
+    activeRequests: 0,
+    lastConnectedAt: null,
+    lastError: null,
+  });
+  const [externalApiSaveStatus, setExternalApiSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [externalApiMessage, setExternalApiMessage] = useState('');
+  const [relayProcessStatus, setRelayProcessStatus] = useState<ExternalApiProcessStatus>({
+    running: false,
+    pid: null,
+    port: DEFAULT_EXTERNAL_API_CONFIG.relayPort,
+    nativeHostAvailable: false,
+    lastCheckedAt: 0,
+    errorMessage: null,
+  });
+
   // --- background ---
   const [bgEnabled, setBgEnabled] = useState(false);
   const [bgType, setBgType] = useState<'upload' | 'url'>('upload');
@@ -265,7 +305,7 @@ export function useSettingsController() {
     let cancelled = false;
     const initialPetLoadGeneration = ++petLoadGenerationRef.current;
     (async () => {
-      const [chatOn, floatingState, keyStatus, mmStatus, memories, cfg, syncCfg, modelType, bgCfg, petCfg, mcpRequestTimeout] = await Promise.all([
+      const [chatOn, floatingState, keyStatus, mmStatus, memories, cfg, syncCfg, modelType, bgCfg, petCfg, mcpRequestTimeout, extApiState] = await Promise.all([
         getChatEnabled().catch((error) => {
           console.error('DeepSeek++ failed to read sidepanel chat setting', error);
           return false;
@@ -297,6 +337,8 @@ export function useSettingsController() {
           .catch(settingsLoadFallback('pet', null)),
         sidepanelRuntimeClient.request({ type: 'GET_MCP_REQUEST_TIMEOUT' })
           .catch(settingsLoadFallback('MCP request timeout', undefined)),
+        sidepanelRuntimeClient.request({ type: 'GET_EXTERNAL_API_STATE' })
+          .catch(settingsLoadFallback('external API state', undefined)),
       ]);
       if (cancelled) return;
       setChatEnabledState(chatOn);
@@ -326,6 +368,11 @@ export function useSettingsController() {
       if (typeof mcpRequestTimeout === 'number' && Number.isFinite(mcpRequestTimeout)) {
         setMcpRequestTimeoutMs(clampMcpRequestTimeout(mcpRequestTimeout));
       }
+      if (extApiState && typeof extApiState === 'object' && 'config' in extApiState && 'status' in extApiState) {
+        const typed = extApiState as { config: ExternalApiConfig; status: ExternalApiStatus };
+        setExternalApiConfigState(typed.config);
+        setExternalApiStatus(typed.status);
+      }
       setLoading(false);
     })();
 
@@ -333,6 +380,7 @@ export function useSettingsController() {
       type?: string;
       config?: PetConfig | null;
       requestTimeoutMs?: number;
+      status?: ExternalApiStatus;
     }) => {
       if (message.type === 'PET_UPDATED') {
         petLoadGenerationRef.current += 1;
@@ -342,6 +390,9 @@ export function useSettingsController() {
         && typeof message.requestTimeoutMs === 'number'
         && Number.isFinite(message.requestTimeoutMs)) {
         setMcpRequestTimeoutMs(clampMcpRequestTimeout(message.requestTimeoutMs));
+      }
+      if (message.type === 'EXTERNAL_API_STATUS_UPDATED' && message.status) {
+        setExternalApiStatus(message.status);
       }
     };
     chrome.runtime.onMessage.addListener(handleSettingsUpdate);
@@ -999,6 +1050,180 @@ export function useSettingsController() {
     setMemoryCount(0);
   }, []);
 
+  const patchExternalApiConfig = useCallback((patch: Partial<ExternalApiConfig>) => {
+    setExternalApiConfigState((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  const handleSaveExternalApiConfig = useCallback(
+    async (
+      messages: { saveFailed: string; saved: string },
+      overrideConfig?: ExternalApiConfig,
+    ) => {
+      setExternalApiSaveStatus('saving');
+      setExternalApiMessage('');
+      const configToSave = overrideConfig || externalApiConfig;
+      const relayHost = configToSave.relayHost || DEFAULT_EXTERNAL_API_HOST;
+      const relayPort = configToSave.relayPort || DEFAULT_EXTERNAL_API_PORT;
+      const derivedRelayWsUrl = `ws://${relayHost}:${relayPort}/ws`;
+      const configToPersist =
+        configToSave.relayWsUrl === derivedRelayWsUrl ? configToSave : { ...configToSave, relayWsUrl: derivedRelayWsUrl };
+      try {
+        const result = await sidepanelRuntimeClient.request({
+          type: 'SAVE_EXTERNAL_API_CONFIG',
+          payload: configToPersist,
+        });
+        if (result && typeof result === 'object' && 'config' in result && 'status' in result) {
+          const typed = result as { config: ExternalApiConfig; status: ExternalApiStatus };
+          setExternalApiConfigState(typed.config);
+          setExternalApiStatus(typed.status);
+        } else {
+          setExternalApiConfigState(configToSave);
+        }
+        setExternalApiSaveStatus('saved');
+        setExternalApiMessage(messages.saved);
+      } catch (error) {
+        setExternalApiSaveStatus('error');
+        setExternalApiMessage(getRuntimeErrorMessage(error) || messages.saveFailed);
+      }
+    },
+    [externalApiConfig],
+  );
+
+  const handleReconnectExternalApi = useCallback(async (messages: { failed: string; reconnected: string }) => {
+    setExternalApiSaveStatus('saving');
+    setExternalApiMessage('');
+    try {
+      const result = await sidepanelRuntimeClient.request({ type: 'RECONNECT_EXTERNAL_API' });
+      if (result && typeof result === 'object' && 'status' in result) {
+        const typed = result as { status: ExternalApiStatus };
+        setExternalApiStatus(typed.status);
+      }
+      setExternalApiSaveStatus('saved');
+      setExternalApiMessage(messages.reconnected);
+    } catch (error) {
+      setExternalApiSaveStatus('error');
+      setExternalApiMessage(getRuntimeErrorMessage(error) || messages.failed);
+    }
+  }, []);
+
+  const refreshProcessStatus = useCallback(async () => {
+    try {
+      const port = externalApiConfig.relayPort || DEFAULT_EXTERNAL_API_PORT;
+      const status = await getRelayProcessStatus(port);
+      setRelayProcessStatus(status);
+    } catch {}
+  }, [externalApiConfig.relayPort]);
+
+  useEffect(() => {
+    void refreshProcessStatus();
+  }, [refreshProcessStatus]);
+
+  const handleStartRelayProcess = useCallback(async (messages: { success: string; failed: string }) => {
+    setExternalApiSaveStatus('saving');
+    try {
+      const port = externalApiConfig.relayPort || DEFAULT_EXTERNAL_API_PORT;
+      if (!isLoopbackHost(externalApiConfig.relayHost) && !hasEnabledExternalApiKeys(externalApiConfig)) {
+        setExternalApiSaveStatus('error');
+        setExternalApiMessage(EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE);
+        return;
+      }
+      const result = await startRelayProcess({
+        host: externalApiConfig.relayHost,
+        port,
+        apiKey: getFirstAuthorizedApiKey(externalApiConfig),
+        extensionToken: externalApiConfig.extensionToken,
+      });
+      await refreshProcessStatus();
+      if (result.ok) {
+        setExternalApiSaveStatus('saved');
+        setExternalApiMessage(result.message || messages.success);
+      } else {
+        setExternalApiSaveStatus('error');
+        setExternalApiMessage(result.message || messages.failed);
+      }
+    } catch (err) {
+      setExternalApiSaveStatus('error');
+      setExternalApiMessage(err instanceof Error ? err.message : messages.failed);
+    }
+  }, [externalApiConfig, refreshProcessStatus]);
+
+  const handleStopRelayProcess = useCallback(async (messages: { success: string; failed: string }) => {
+    setExternalApiSaveStatus('saving');
+    try {
+      const port = externalApiConfig.relayPort || DEFAULT_EXTERNAL_API_PORT;
+      const result = await stopRelayProcess(port);
+      await refreshProcessStatus();
+      if (result.ok) {
+        setExternalApiSaveStatus('saved');
+        setExternalApiMessage(result.message || messages.success);
+      } else {
+        setExternalApiSaveStatus('error');
+        setExternalApiMessage(result.message || messages.failed);
+      }
+    } catch (err) {
+      setExternalApiSaveStatus('error');
+      setExternalApiMessage(err instanceof Error ? err.message : messages.failed);
+    }
+  }, [externalApiConfig.relayPort, refreshProcessStatus]);
+
+  const handleCreateApiKey = useCallback(
+    async (name: string, customKey?: string, messages?: { saveFailed: string; saved: string }) => {
+      const newKey = createExternalApiKey(name, customKey);
+      const updatedConfig: ExternalApiConfig = {
+        ...externalApiConfig,
+        apiKeys: [newKey, ...externalApiConfig.apiKeys],
+      };
+      setExternalApiConfigState(updatedConfig);
+      if (messages) {
+        await handleSaveExternalApiConfig(messages, updatedConfig);
+      }
+      return newKey;
+    },
+    [externalApiConfig, handleSaveExternalApiConfig],
+  );
+
+  const handleUpdateApiKey = useCallback(
+    async (id: string, patch: Partial<ExternalApiKey>, messages?: { saveFailed: string; saved: string }) => {
+      const updatedConfig: ExternalApiConfig = {
+        ...externalApiConfig,
+        apiKeys: externalApiConfig.apiKeys.map((k) => (k.id === id ? { ...k, ...patch } : k)),
+      };
+      setExternalApiConfigState(updatedConfig);
+      if (messages) {
+        await handleSaveExternalApiConfig(messages, updatedConfig);
+      }
+    },
+    [externalApiConfig, handleSaveExternalApiConfig],
+  );
+
+  const handleDeleteApiKey = useCallback(
+    async (id: string, messages?: { saveFailed: string; saved: string }) => {
+      const updatedConfig: ExternalApiConfig = {
+        ...externalApiConfig,
+        apiKeys: externalApiConfig.apiKeys.filter((k) => k.id !== id),
+      };
+      setExternalApiConfigState(updatedConfig);
+      if (messages) {
+        await handleSaveExternalApiConfig(messages, updatedConfig);
+      }
+    },
+    [externalApiConfig, handleSaveExternalApiConfig],
+  );
+
+  const handleToggleApiKey = useCallback(
+    async (id: string, enabled: boolean, messages?: { saveFailed: string; saved: string }) => {
+      const updatedConfig: ExternalApiConfig = {
+        ...externalApiConfig,
+        apiKeys: externalApiConfig.apiKeys.map((k) => (k.id === id ? { ...k, enabled } : k)),
+      };
+      setExternalApiConfigState(updatedConfig);
+      if (messages) {
+        await handleSaveExternalApiConfig(messages, updatedConfig);
+      }
+    },
+    [externalApiConfig, handleSaveExternalApiConfig],
+  );
+
   return {
     // shared
     loading,
@@ -1020,6 +1245,22 @@ export function useSettingsController() {
     apiKeyMessage,
     handleSaveApiKey,
     handleClearApiKey,
+    // external api
+    externalApiConfig,
+    externalApiStatus,
+    externalApiSaveStatus,
+    externalApiMessage,
+    relayProcessStatus,
+    patchExternalApiConfig,
+    handleSaveExternalApiConfig,
+    handleReconnectExternalApi,
+    refreshProcessStatus,
+    handleStartRelayProcess,
+    handleStopRelayProcess,
+    handleCreateApiKey,
+    handleUpdateApiKey,
+    handleDeleteApiKey,
+    handleToggleApiKey,
     // multimodal
     multimodalConfigured,
     openaiApiKeyInput,

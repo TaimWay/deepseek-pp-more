@@ -2,12 +2,14 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
   DEFAULT_EXTERNAL_API_CONFIG,
   EXTERNAL_API_MODEL_CATALOG,
+  EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE,
   type BridgeFromExtensionMessage,
   type BridgeFromExtensionToolEvent,
   type BridgeToExtensionChatRequest,
   type ExternalApiConfig,
   type ExternalApiToolDefinition,
 } from '../core/external-api/contracts';
+import { startRelayProcess } from '../core/external-api/process';
 import {
   convertClientToolsToDescriptors,
   createExternalApiService,
@@ -27,6 +29,17 @@ import type { MultimodalMediaAnalyzeRequest } from '../core/multimodal/media';
 vi.mock('../core/multimodal/settings', () => ({
   getMultimodalSettingsStatus: vi.fn(),
 }));
+
+// Process module: spy-wrapped so service auto-start assertions can inspect
+// call args while the REAL gate logic still runs underneath (importOriginal).
+vi.mock('../core/external-api/process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../core/external-api/process')>();
+  return {
+    ...actual,
+    isNativeHostAvailable: vi.fn(async () => true),
+    startRelayProcess: vi.fn((options) => actual.startRelayProcess(options)),
+  };
+});
 
 class MockWebSocket {
   static OPEN = 1;
@@ -1075,6 +1088,89 @@ describe('External API Service Bridge', () => {
     expect(done).toBeUndefined();
 
     service.stop();
+  });
+
+  it('auto-start with relayHost 0.0.0.0 passes host and extensionToken to startRelayProcess', async () => {
+    mockConfig.relayHost = '0.0.0.0';
+    mockConfig.extensionToken = 'tok-abc-123';
+    mockConfig.autoStartRelay = true;
+    mockConfig.apiKeys = [
+      {
+        id: 'k-managed',
+        name: 'Managed Key',
+        key: 'sk-dspp-managed',
+        keyPrefix: 'sk-dspp...naged',
+        createdAt: 0,
+        lastUsedAt: null,
+        usageCount: 0,
+        enabled: true,
+      },
+    ];
+    const deps = createTestDependencies();
+    const service = createExternalApiService(deps);
+
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(vi.mocked(startRelayProcess)).toHaveBeenCalledWith(
+      expect.objectContaining({
+        host: '0.0.0.0',
+        port: 3000,
+        apiKey: 'sk-dspp-managed',
+        extensionToken: 'tok-abc-123',
+      }),
+    );
+
+    service.stop();
+  });
+
+  it('service auto-start refuses non-loopback host without any enabled API key', async () => {
+    mockConfig.relayHost = '0.0.0.0';
+    mockConfig.autoStartRelay = true;
+    mockConfig.apiKeys = [];
+    mockConfig.apiKey = '';
+    const deps = createTestDependencies();
+    const service = createExternalApiService(deps);
+
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(vi.mocked(startRelayProcess)).not.toHaveBeenCalled();
+    expect(service.getStatus().lastError).toBe(EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE);
+
+    service.stop();
+  });
+
+  it('startRelayProcess refuses non-loopback host without an API key (process gate)', async () => {
+    const result = await startRelayProcess({ host: '0.0.0.0', port: 3000, apiKey: '' });
+
+    expect(result.ok).toBe(false);
+    expect(result.message).toBe(EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE);
+    expect(EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE).toContain('requires at least one enabled API key');
+  });
+
+  it('service auto-start allows loopback host without keys (backward compatible)', async () => {
+    mockConfig.relayHost = '127.0.0.1';
+    mockConfig.autoStartRelay = true;
+    mockConfig.apiKeys = [];
+    mockConfig.apiKey = '';
+    const deps = createTestDependencies();
+    const service = createExternalApiService(deps);
+
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(vi.mocked(startRelayProcess)).toHaveBeenCalledWith(
+      expect.objectContaining({ host: '127.0.0.1', port: 3000 }),
+    );
+
+    service.stop();
+  });
+
+  it('startRelayProcess allows loopback host without an API key (backward compatible)', async () => {
+    const result = await startRelayProcess({ host: '127.0.0.1', port: 3000, apiKey: '' });
+
+    expect(result.message).not.toBe(EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE);
   });
 });
 

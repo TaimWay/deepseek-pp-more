@@ -17,6 +17,10 @@ import { getMultimodalSettingsStatus } from '../multimodal/settings';
 import {
   DEFAULT_EXTERNAL_API_SESSION_KEY,
   EXTERNAL_API_MODEL_CATALOG,
+  EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE,
+  getFirstAuthorizedApiKey,
+  hasEnabledExternalApiKeys,
+  isLoopbackHost,
   type BridgeFromExtensionMessage,
   type BridgeToExtensionChatRequest,
   type BridgeToExtensionMessage,
@@ -265,10 +269,10 @@ export function createExternalApiService(
   }
 
   function getAuthorizedApiKeys(config: ExternalApiConfig): string[] {
+    if (!hasEnabledExternalApiKeys(config)) return [];
     const active = config.apiKeys.filter((k) => k.enabled).map((k) => k.key);
     if (active.length > 0) return active;
-    if (config.apiKey && config.apiKey.trim()) return [config.apiKey.trim()];
-    return [];
+    return [config.apiKey.trim()];
   }
 
   function startHeartbeat() {
@@ -336,7 +340,17 @@ export function createExternalApiService(
         const nativeAvailable = await isNativeHostAvailable();
         if (nativeAvailable) {
           const port = currentConfig.relayPort || 3000;
-          await startRelayProcess({ port, apiKey: currentConfig.apiKey });
+          if (!isLoopbackHost(currentConfig.relayHost) && !hasEnabledExternalApiKeys(currentConfig)) {
+            lastError = EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE;
+            emitStatusUpdate();
+            return;
+          }
+          await startRelayProcess({
+            host: currentConfig.relayHost,
+            port,
+            apiKey: getFirstAuthorizedApiKey(currentConfig),
+            extensionToken: currentConfig.extensionToken,
+          });
         }
       } catch {}
     }
