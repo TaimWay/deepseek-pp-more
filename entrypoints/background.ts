@@ -184,6 +184,7 @@ import {
   saveScenario,
 } from '../core/scenario/store';
 import { getChatEnabled } from '../core/chat/store';
+import { getAskDeepSeekSettings } from '../core/ask-deepseek/store';
 import { pendingChatTextStore } from '../core/chat/pending-text';
 import {
   markChatLoopFinished,
@@ -332,7 +333,11 @@ let currentBackgroundLocale: SupportedLocale = DEFAULT_LOCALE;
 let currentBackgroundTranslator = createTranslator(DEFAULT_LOCALE);
 let sandboxOffscreenCreation: Promise<void> | null = null;
 const chatRuntimeService = createChatRuntimeService({
-  getChatEnabled,
+  getChatEnabled: async () => {
+    const floatingEnabled = await getChatEnabled();
+    const askSettings = await getAskDeepSeekSettings();
+    return floatingEnabled || askSettings.enabled;
+  },
   getDeepSeekApiKey,
   getOfficialApiChatConfig,
   loadClientHeaders: loadOrRefreshClientHeaders,
@@ -961,7 +966,7 @@ async function createContextMenus() {
 
   chrome.contextMenus.create({
     id: 'ask-deepseek-selection',
-    title: currentBackgroundLocale === 'zh-CN' ? '问问 DeepSeek：选中文本' : 'Ask DeepSeek: Selection',
+    title: currentBackgroundLocale === 'zh-CN' ? '问问 DeepSeek："%s"' : 'Ask DeepSeek: "%s"',
     contexts: ['selection'],
     ...menuScope,
   });

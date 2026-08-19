@@ -185,6 +185,31 @@ export default function ChatPage() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+      chrome.storage.session.get(['dpp_ask_messages', 'dpp_ask_input']).then((data) => {
+        if (data.dpp_ask_messages && Array.isArray(data.dpp_ask_messages) && data.dpp_ask_messages.length > 0) {
+          setMessages(data.dpp_ask_messages);
+        }
+        if (typeof data.dpp_ask_input === 'string') {
+          setInputText(data.dpp_ask_input);
+        }
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+      chrome.storage.session.set({ dpp_ask_messages: messages });
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+      chrome.storage.session.set({ dpp_ask_input: inputText });
+    }
+  }, [inputText]);
+
 
   useEffect(() => {
     imageAttachmentsRef.current = imageAttachments;

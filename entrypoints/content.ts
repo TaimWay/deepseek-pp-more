@@ -9141,6 +9141,22 @@ function patchContainerBackgrounds() {
   const root = document.getElementById("root");
   if (!root) return;
 
+  const selectors = [
+    'header', 'aside', '[class*="sidebar_"]', '[class*="header_"]',
+    '[class*="bottom_"]', '[class*="footer_"]', '[class*="layout_"]', '[class*="chat-"]'
+  ];
+  
+  // Re-apply data-dpp-transparent to elements that might have lost it due to React re-render
+  const elements = document.querySelectorAll(selectors.join(', '));
+  elements.forEach(el => {
+    if (el.tagName === 'MAIN' || el.id === 'root' || el.id === '__next') return;
+    const style = getComputedStyle(el);
+    // Add transparent tag to anything that has a background, so the background stylesheet applies the translucent surface
+    if (hasVisibleBackground(style) && !el.hasAttribute("data-dpp-transparent")) {
+      el.setAttribute("data-dpp-transparent", "");
+    }
+  });
+
   const textarea = getPromptTextarea();
   if (!textarea) return;
 
@@ -9150,19 +9166,9 @@ function patchContainerBackgrounds() {
   let el = inputBox.parentElement;
   while (el && el !== root && el !== document.body) {
     const style = getComputedStyle(el);
-    if (hasVisibleBackground(style)) {
-      (el as HTMLElement).setAttribute("data-dpp-transparent", "");
+    if (hasVisibleBackground(style) && !el.hasAttribute("data-dpp-transparent")) {
+      el.setAttribute("data-dpp-transparent", "");
     }
-
-    if (style.position === "sticky") {
-      for (const child of el.children) {
-        if (child.contains(textarea)) continue;
-        if (hasVisibleBackground(getComputedStyle(child))) {
-          (child as HTMLElement).setAttribute("data-dpp-transparent", "");
-        }
-      }
-    }
-
     el = el.parentElement;
   }
 }
@@ -9895,82 +9901,121 @@ function ensureInputToolbox(): void {
   const inputBox = findDeepSeekInputBox();
   if (!inputBox) return;
 
-  const fileInput = inputBox.querySelector('input[type="file"]');
-  const uploadBtn = fileInput?.parentElement ||
-    inputBox.querySelector('button[aria-label*="上传"], button[aria-label*="Upload"], button[title*="上传"], button[title*="Upload"], [class*="upload"]') ||
-    inputBox.querySelector('button:has(svg)');
-
-  const rightContainer = uploadBtn?.parentElement || inputBox.lastElementChild;
+  // The send button is always the last button in the composer
+  const buttons = Array.from(inputBox.querySelectorAll('button'));
+  if (buttons.length === 0) return;
+  const sendBtn = buttons[buttons.length - 1];
+  
+  // The right container holds the upload and send buttons
+  const rightContainer = sendBtn.parentElement;
   if (!rightContainer) return;
 
+  // The left container is the first child of their shared parent (the action bar)
   const leftContainer = rightContainer.parentElement?.firstElementChild;
 
   const isZh = currentContentLocale === "zh-CN";
 
-  if (leftContainer && !document.getElementById(`${INPUT_TOOLBOX_ID}-left`)) {
-    const leftBox = document.createElement("div");
-    leftBox.id = `${INPUT_TOOLBOX_ID}-left`;
-    leftBox.style.display = "inline-flex";
-    leftBox.style.alignItems = "center";
-    leftBox.style.marginLeft = "8px";
+  // INJECT LEFT: "Web Search (Ext)"
+  if (leftContainer && !leftContainer.querySelector('[data-dpp-itb="ext-search"]')) {
+    const btn = document.createElement("div");
+    // DeepSeek uses divs acting as buttons in some new versions, or we can use the same tag as the first child
+    const nativeToggle = leftContainer.firstElementChild;
+    const isButton = nativeToggle?.tagName === 'BUTTON';
+    const extSearchBtn = document.createElement(isButton ? 'button' : 'div');
+    if (isButton) (extSearchBtn as HTMLButtonElement).type = "button";
     
-    leftBox.innerHTML = `
-      <button type="button" class="ds-button ds-button--text ds-button--secondary ds-button--size-m ds-button--icon-only ds-toggle ds-toggle--default ${extSearchActiveState ? 'ds-toggle--active' : ''}" data-dpp-itb="ext-search" title="${isZh ? '联网搜索 (扩展)' : 'Web Search (Ext)'}">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path><path d="M2 12h20"></path></svg>
-        <div class="ds-button__text" style="font-size: 14px; font-weight: 400; line-height: 20px;">${isZh ? '联网搜索 (扩展)' : 'Web Search (Ext)'}</div>
-      </button>
+    // Copy EXACT classes from the first native toggle (like DeepThink)
+    if (nativeToggle) {
+      extSearchBtn.className = nativeToggle.className;
+      // Strip active classes if any
+      extSearchBtn.classList.remove('ds-toggle--active', 'ds-chat-segment-active', 'active');
+    } else {
+      extSearchBtn.className = `ds-button ds-button--text ds-button--secondary ds-button--size-m ds-button--icon-only ds-toggle ds-toggle--default`;
+    }
+    
+    if (extSearchActiveState) {
+      // Find what active class to apply
+      if (nativeToggle?.className.includes('ds-chat-segment')) {
+        extSearchBtn.classList.add('ds-chat-segment-active');
+      } else {
+        extSearchBtn.classList.add('ds-toggle--active');
+      }
+    }
+
+    extSearchBtn.setAttribute("data-dpp-itb", "ext-search");
+    extSearchBtn.title = isZh ? '联网搜索 (扩展)' : 'Web Search (Ext)';
+    
+    // Add margin if it's placed after native buttons
+    extSearchBtn.style.marginLeft = "8px";
+    extSearchBtn.style.cursor = "pointer";
+    extSearchBtn.style.display = "inline-flex";
+    extSearchBtn.style.alignItems = "center";
+    extSearchBtn.style.justifyContent = "center";
+    
+    // Use the native inner structure pattern
+    extSearchBtn.innerHTML = `
+      <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path><path d="M2 12h20"></path></svg>
+        <span style="font-size: 14px;">${isZh ? '联网扩展' : 'Web (Ext)'}</span>
+      </div>
     `;
-    leftContainer.appendChild(leftBox);
+    leftContainer.appendChild(extSearchBtn);
     
-    leftBox.addEventListener("click", (e) => {
-      const target = (e.target as Element).closest("[data-dpp-itb]");
-      if (!target) return;
+    extSearchBtn.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
       extSearchActiveState = !extSearchActiveState;
-      target.classList.toggle("ds-toggle--active", extSearchActiveState);
-    });
-  }
-
-  let rightBox = document.getElementById(`${INPUT_TOOLBOX_ID}-right`);
-  if (!rightBox) {
-    rightBox = document.createElement("div");
-    rightBox.id = `${INPUT_TOOLBOX_ID}-right`;
-    rightBox.style.display = "inline-flex";
-    rightBox.style.alignItems = "center";
-    rightBox.style.gap = "6px";
-    rightBox.style.marginRight = "6px";
-    
-    rightBox.innerHTML = `
-      <button type="button" class="ds-button ds-button--text ds-button--secondary ds-button--size-m ds-button--icon-only ds-toggle ds-toggle--default ${agentCallActiveState ? 'ds-toggle--active' : ''}" data-dpp-itb="agent-call" title="${isZh ? '允许调用 Agent Call' : 'Allow Agent Call'}">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-      </button>
-      <button type="button" class="ds-button ds-button--text ds-button--secondary ds-button--size-m ds-button--icon-only" data-dpp-itb="memory-manage" title="${isZh ? '记忆管理' : 'Memory Manager'}">
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4c-3.86 0-7 3.14-7 7s3.14 7 7 7 7-3.14 7-7-3.14-7-7-7z"></path><path d="M12 4v7l4 2"></path></svg>
-      </button>
-    `;
-
-    rightBox.addEventListener("click", (e) => {
-      const target = (e.target as Element).closest("[data-dpp-itb]");
-      if (!target) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const action = target.getAttribute("data-dpp-itb");
-      if (action === "agent-call") {
-        agentCallActiveState = !agentCallActiveState;
-        target.classList.toggle("ds-toggle--active", agentCallActiveState);
-      } else if (action === "memory-manage") {
-        // @ts-ignore
-void sendRuntimeMessage({ type: "OPEN_CHAT_WITH_TEXT", text: "" });
+      if (nativeToggle?.className.includes('ds-chat-segment')) {
+        extSearchBtn.classList.toggle("ds-chat-segment-active", extSearchActiveState);
+      } else {
+        extSearchBtn.classList.toggle("ds-toggle--active", extSearchActiveState);
       }
     });
   }
 
-  if (uploadBtn && uploadBtn.parentElement === rightContainer) {
-    if (rightBox.nextElementSibling !== uploadBtn) {
-      rightContainer.insertBefore(rightBox, uploadBtn);
+  // INJECT RIGHT: "Agent Call" and "Memory"
+  if (rightContainer && !rightContainer.querySelector('[data-dpp-itb="agent-call"]')) {
+    const btnCall = document.createElement("button");
+    btnCall.type = "button";
+    
+    // Attempt to clone the style of the first button in the right container (usually the upload button)
+    const nativeAttachmentBtn = rightContainer.firstElementChild;
+    btnCall.className = nativeAttachmentBtn ? nativeAttachmentBtn.className : "ds-chat-attachment-button";
+    
+    btnCall.setAttribute("data-dpp-itb", "agent-call");
+    btnCall.title = isZh ? '允许调用 Agent Call' : 'Allow Agent Call';
+    if (agentCallActiveState) {
+      btnCall.style.color = "var(--ds-primary, #1d4ed8)";
     }
-  } else if (rightBox.parentElement !== rightContainer) {
-    rightContainer.prepend(rightBox);
+    btnCall.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>`;
+    
+    const btnMemory = document.createElement("button");
+    btnMemory.type = "button";
+    btnMemory.className = nativeAttachmentBtn ? nativeAttachmentBtn.className : "ds-chat-attachment-button";
+    btnMemory.setAttribute("data-dpp-itb", "memory-manage");
+    btnMemory.title = isZh ? '记忆管理' : 'Memory Manager';
+    btnMemory.innerHTML = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4c-3.86 0-7 3.14-7 7s3.14 7 7 7 7-3.14 7-7-3.14-7-7-7z"></path><path d="M12 4v7l4 2"></path></svg>`;
+
+    // Inject before the upload button (first element of right container)
+    rightContainer.insertBefore(btnMemory, rightContainer.firstElementChild);
+    rightContainer.insertBefore(btnCall, rightContainer.firstElementChild);
+
+    btnCall.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      agentCallActiveState = !agentCallActiveState;
+      if (agentCallActiveState) {
+        btnCall.style.color = "var(--ds-primary, #1d4ed8)";
+      } else {
+        btnCall.style.color = "";
+      }
+    });
+
+    btnMemory.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      // @ts-ignore
+      void sendRuntimeMessage({ type: "OPEN_CHAT_WITH_TEXT", text: "" });
+    });
   }
 }
