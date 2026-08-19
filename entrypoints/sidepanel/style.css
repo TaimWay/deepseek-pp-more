@@ -1998,3 +1998,15 @@ input[type='range'] {
   from { opacity: 0; transform: translateY(6px) scale(0.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+
+/* Blockquote styles for system messages (e.g. Tool execution) */
+.ds-chat-message-row-assistant blockquote {
+  margin: 12px 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--ds-blue, #1d4ed8);
+  background: var(--ds-blue-light, rgba(29, 78, 216, 0.05));
+  border-radius: 0 4px 4px 0;
+  color: var(--ds-text-secondary, #4b5563);
+  font-size: 13px;
+  line-height: 1.5;
+}

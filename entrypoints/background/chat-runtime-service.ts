@@ -8,7 +8,7 @@ import type {
   OfficialDeepSeekTurn,
   SubmitOfficialDeepSeekInput,
 } from '../../core/deepseek/official-api';
-import { extractToolCalls } from '../../core/interceptor/tool-parser';
+import { extractToolCalls, stripToolCalls } from '../../core/interceptor/tool-parser';
 import {
   materializeDeepSeekImageUpload,
   type EncodedDeepSeekImageUploadRequest,
@@ -371,14 +371,17 @@ export function createChatRuntimeService(
         return currentMessages;
       }
 
+      
+      const strippedFullText = stripToolCalls(fullText, { descriptors: toolDescriptors });
       currentMessages = [
         ...currentMessages,
         {
           role: 'assistant',
-          content: fullText,
+          content: strippedFullText,
           reasoningContent: reasoningAccumulated || result.reasoningText || undefined,
         },
       ];
+
       const toolCalls = extractToolCalls(fullText, { descriptors: toolDescriptors });
       if (toolCalls.length === 0) {
         emitChunk(turn, { text: '', done: true }, excludeTabId);

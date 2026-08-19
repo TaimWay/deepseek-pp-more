@@ -798,14 +798,29 @@ export default function ChatPage() {
           </div>
         )}
 
-        {messages.map((msg, index) => (
+        {messages.map((msg, index) => {
+          let displayMsg = { ...msg };
+          if (displayMsg.text) {
+            displayMsg.text = displayMsg.text
+              .replace(/<tool_calls>[\s\S]*?<\/tool_calls>/g, '')
+              .replace(/<browser_snapshot>[\s\S]*?<\/browser_snapshot>/g, '')
+              .replace(/<browser_list_tabs>[\s\S]*?<\/browser_list_tabs>/g, '')
+              .replace(/<web_fetch>[\s\S]*?<\/web_fetch>/g, '')
+              .replace(/<web_search>[\s\S]*?<\/web_search>/g, '')
+              .replace(/<tool_calls>[\s\S]*$/, '')
+              .replace(/<browser_snapshot>[\s\S]*$/, '')
+              .replace(/<browser_list_tabs>[\s\S]*$/, '')
+              .replace(/<web_fetch>[\s\S]*$/, '')
+              .replace(/<web_search>[\s\S]*$/, '');
+          }
+          return (
           <ChatMessage
             key={`${msg.role}-${index}-${msgSeq}`}
-            message={msg}
+            message={displayMsg}
             isStreaming={isStreaming && index === messages.length - 1 && msg.role === 'assistant'}
             onRichContentRendered={scrollMessagesToBottom}
           />
-        ))}
+        )})}
 
         {error && (
           <div className="ds-chat-error-wrap">

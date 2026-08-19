@@ -962,10 +962,8 @@ async function createContextMenus() {
     await chrome.contextMenus.removeAll();
     return;
   }
-  const apiKeyConfigured = await hasDeepSeekApiKey();
-  const menuScope = apiKeyConfigured
-    ? {}
-    : { documentUrlPatterns: [DEEPSEEK_TAB_URL_PATTERN] };
+    const apiKeyConfigured = await hasDeepSeekApiKey();
+  const menuScope = {};
   const scenarios = await getAllScenarios();
   const enabledScenarios = scenarios.filter((s) => s.enabled);
 
