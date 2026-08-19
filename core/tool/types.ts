@@ -22,6 +22,7 @@ export const TOOL_EXECUTION_TRIGGERS = [
   'automation',
   'test',
   'sidepanel_chat',
+  'external_api',
 ] as const;
 
 export type ToolExecutionTrigger = typeof TOOL_EXECUTION_TRIGGERS[number];

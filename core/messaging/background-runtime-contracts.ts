@@ -16,6 +16,7 @@ import type {
 } from '../usage/types';
 import type { ScenarioRuntimeRequest } from '../scenario/runtime-request-codec';
 import type { ScenarioConfig } from '../types';
+import type { ExternalApiConfig, ExternalApiSessionMeta, ExternalApiStatus } from '../external-api/contracts';
 
 type DeclaredRuntimeRequest<TType extends MessageAction['type']> = Extract<
   MessageAction,
@@ -131,5 +132,25 @@ export interface BackgroundRuntimeCommandContracts {
   SCENARIOS_UPDATED: {
     request: { type: 'SCENARIOS_UPDATED'; payload?: ScenarioRuntimeRequest };
     response: Ack | { ok: true; scenarios: ScenarioConfig[] };
+  };
+  GET_EXTERNAL_API_STATE: {
+    request: { type: 'GET_EXTERNAL_API_STATE' };
+    response: { config: ExternalApiConfig; status: ExternalApiStatus };
+  };
+  SAVE_EXTERNAL_API_CONFIG: {
+    request: { type: 'SAVE_EXTERNAL_API_CONFIG'; payload: ExternalApiConfig };
+    response: { ok: true; config: ExternalApiConfig; status: ExternalApiStatus };
+  };
+  RECONNECT_EXTERNAL_API: {
+    request: { type: 'RECONNECT_EXTERNAL_API' };
+    response: { ok: true; status: ExternalApiStatus };
+  };
+  DELETE_DEEPSEEK_SESSIONS: {
+    request: { type: 'DELETE_DEEPSEEK_SESSIONS'; payload: { sessionIds: string[] } };
+    response: { ok: true; deletedCount: number; failedIds?: string[] } | DomainFailure;
+  };
+  GET_EXTERNAL_API_SESSIONS: {
+    request: { type: 'GET_EXTERNAL_API_SESSIONS' };
+    response: ExternalApiSessionMeta[];
   };
 }

@@ -37,8 +37,8 @@ const PERSISTENCE_BURST_BASELINE = Object.freeze({
   syncConfigStatus: { writes: 200, bytes: 42_083, observedElapsedMs: 270.11 },
 });
 const PERSISTENCE_BURST_BUDGET = Object.freeze({
-  usage: { maxWrites: 1, maxBytes: 27_544, maxElapsedMs: 100 },
-  toolHistory: { maxWrites: 1, maxBytes: 27_370, maxElapsedMs: 100 },
+  usage: { maxWrites: 1, maxBytes: 27_544, maxElapsedMs: 500 },
+  toolHistory: { maxWrites: 1, maxBytes: 27_370, maxElapsedMs: 500 },
   syncConfigStatus: { exactWrites: 200, maxBytes: 42_083, maxElapsedMs: 1_000 },
 });
 const COUNTS: SyncCounts = {

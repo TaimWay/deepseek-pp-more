@@ -516,6 +516,31 @@ input[type='range'] {
   }
 }
 
+/* Standalone Options page container */
+.ds-app-shell-options {
+  max-width: 1040px;
+  width: 100%;
+  margin: 0 auto;
+  box-shadow: 0 0 32px oklch(0.2 0.02 264 / 0.08);
+  border-left: 1px solid var(--ds-border);
+  border-right: 1px solid var(--ds-border);
+}
+
+.ds-app-shell-options .side-tabs {
+  padding: 8px 16px;
+  gap: 8px;
+}
+
+.ds-app-shell-options .ds-settings-shell {
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.ds-app-shell-options .ds-settings-content {
+  padding: 16px 20px 48px;
+}
+
 /* Card — flat editorial plane; depth comes from the line, not a shadow */
 .ds-card {
   background: var(--ds-card);

@@ -960,6 +960,20 @@ async function createContextMenus() {
   await chrome.contextMenus.removeAll();
 
   chrome.contextMenus.create({
+    id: 'ask-deepseek-selection',
+    title: currentBackgroundLocale === 'zh-CN' ? '问问 DeepSeek：选中文本' : 'Ask DeepSeek: Selection',
+    contexts: ['selection'],
+    ...menuScope,
+  });
+
+  chrome.contextMenus.create({
+    id: 'ask-deepseek-page',
+    title: currentBackgroundLocale === 'zh-CN' ? '问问 DeepSeek：解释此网页' : 'Ask DeepSeek: Explain Page',
+    contexts: ['page'],
+    ...menuScope,
+  });
+
+  chrome.contextMenus.create({
     id: 'send-to-chat',
     title: backgroundT('background.contextMenus.sendToChat'),
     contexts: ['selection'],
@@ -990,10 +1004,6 @@ function registerContextMenuClickListener(): void {
     info: chrome.contextMenus.OnClickData,
     tab?: chrome.tabs.Tab,
   ) => {
-    if (!info.selectionText) return;
-    const selectedText = info.selectionText.trim();
-    if (!selectedText) return;
-
     // Open the sidepanel before async boundaries so the user gesture remains valid.
     const tabId = tab?.id;
     if (tabId && chrome.sidePanel?.open) {
@@ -1003,6 +1013,29 @@ function registerContextMenuClickListener(): void {
 
     const chatEnabled = await getChatEnabled();
     if (!chatEnabled) return;
+
+    if (info.menuItemId === 'ask-deepseek-page') {
+      const pageTitle = tab?.title || '当前网页';
+      const pageUrl = tab?.url || '';
+      const prompt = currentBackgroundLocale === 'zh-CN'
+        ? `请阅读并详细解释当前网页《${pageTitle}》(${pageUrl}) 的核心内容与关键要点。`
+        : `Please examine and explain the key points of the webpage "${pageTitle}" (${pageUrl}).`;
+      openSidePanelAndSendText(prompt)
+        .catch((error) => reportBackgroundStartupError('pending_chat_text_write_failed', error));
+      return;
+    }
+
+    if (!info.selectionText) return;
+    const selectedText = info.selectionText.trim();
+    if (!selectedText) return;
+
+    if (info.menuItemId === 'ask-deepseek-selection') {
+      const pageTitle = tab?.title ? ` [Source: ${tab.title}]` : '';
+      const snippet = `\`\`\`text${pageTitle}\n${selectedText}\n\`\`\`\n\n请针对以上选中文本进行详细解析和解答。`;
+      openSidePanelAndSendText(snippet)
+        .catch((error) => reportBackgroundStartupError('pending_chat_text_write_failed', error));
+      return;
+    }
 
     if (info.menuItemId === 'send-to-chat') {
       openSidePanelAndSendText(selectedText)
@@ -1087,6 +1120,17 @@ async function handleMessage(
   message: RuntimeMessageEnvelope,
   context: RuntimeMessageContext,
 ) {
+  if (message.type === 'OPEN_CHAT_WITH_TEXT') {
+    const text = (message as any).text ?? (message.payload as any)?.text ?? '';
+    if (context.tabId && chrome.sidePanel?.open) {
+      chrome.sidePanel.open({ tabId: context.tabId })
+        .catch((error) => reportBackgroundStartupError('sidepanel_open_failed', error));
+    }
+    if (text) {
+      await openSidePanelAndSendText(text);
+    }
+    return { ok: true };
+  }
   return runtimeCommandRegistry.dispatch(message, context);
 }
 
@@ -1655,6 +1699,7 @@ async function buildExternalApiPrompt(request: {
   const allowTools = request.allowAgentTools !== false;
   let enabledDescriptors: ToolDescriptor[] = [];
   let toolsContext = '';
+  let agentInstruction = '';
 
   if (allowTools) {
     const toolDescriptors = await getRuntimeToolDescriptors(currentBackgroundLocale);
@@ -1662,7 +1707,11 @@ async function buildExternalApiPrompt(request: {
     enabledDescriptors = filterRetiredModelFacingTools(sidepanelDescriptors);
     const clientDescriptors = convertClientToolsToDescriptors(request.clientTools);
     const renderDescriptors = [...enabledDescriptors, ...clientDescriptors];
-    toolsContext = renderToolSchemas(renderDescriptors, currentBackgroundLocale);
+    if (renderDescriptors.length > 0) {
+      toolsContext = renderToolSchemas(renderDescriptors, currentBackgroundLocale);
+      const toolNames = renderDescriptors.map((d) => d.name).join(', ');
+      agentInstruction = `[Agent Capabilities & Instructions]\nYou are an advanced AI assistant equipped with Agent Call capabilities.\nYou have access to external tools and functions (${toolNames}) listed below.\nWhen answering queries that require real-time information (e.g. web search), browsing, file operations, calculations, or execution, you MUST invoke tools using their exact XML tag format: <tool_name>{"param": "value"}</tool_name>.\nDo NOT state that you cannot search the web or execute operations when the corresponding tool is available. The system will execute your tool call and return the results for you to formulate your final answer.\n\n`;
+    }
   }
 
   const promptSettings = await getPromptInjectionSettings();
@@ -1689,8 +1738,15 @@ async function buildExternalApiPrompt(request: {
     systemInfoContext = `[Environment Context]\n- Current Time: ${timeStr}\n- Target Model: ${modelDesc}\n\n`;
   }
 
+  const isChinesePrompt = /[\u4e00-\u9fa5]/.test(request.prompt) || currentBackgroundLocale === 'zh-CN';
+  const languageInstruction = isChinesePrompt
+    ? `[语言回复要求 / Language Instruction]\n用户使用中文进行提问或包含中文内容。你必须始终使用中文进行分析、总结与回答，不得自动切换为英文。\n\n`
+    : `[Language Instruction]\nAlways reply in the user's inquiry language.\n\n`;
+
   let prefix = '';
+  if (languageInstruction) prefix += languageInstruction;
   if (systemInfoContext) prefix += systemInfoContext;
+  if (agentInstruction) prefix += agentInstruction;
   if (toolsContext) prefix += `[Available Tools & Functions]:\n${toolsContext}\n\n`;
   if (memoryContext) prefix += memoryContext;
 

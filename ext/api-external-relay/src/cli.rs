@@ -31,4 +31,8 @@ pub struct Args {
     /// Path to TLS private key PEM file
     #[arg(long = "tls-key", env = "TLS_KEY")]
     pub tls_key: Option<PathBuf>,
+
+    /// Enable verbose debug logging
+    #[arg(short, long, env = "DEBUG")]
+    pub debug: bool,
 }

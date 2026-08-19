@@ -1,13 +1,13 @@
 export const RUNTIME_TOPOLOGY = {
-  liveCommands: 131,
-  declaredActions: 100,
-  shared: 98,
+  liveCommands: 136,
+  declaredActions: 105,
+  shared: 103,
   liveOnly: 33,
   declaredOnly: 2,
-  readsPayload: 86,
-  ignoresPayload: 45,
+  readsPayload: 88,
+  ignoresPayload: 48,
   directPayloadCasts: 0,
-  decodedPayloads: 86,
+  decodedPayloads: 88,
   delegatedPayloads: 0,
 } as const;
 
@@ -208,6 +208,7 @@ export const RUNTIME_NOTIFICATION_TYPES = [
   'DEEPSEEK_EXPORT_PROGRESS',
   'CHAT_STREAM_CHUNK',
   'OPEN_CHAT_WITH_TEXT',
+  'EXTERNAL_API_STATUS_UPDATED',
 ] as const;
 
 export const RUNTIME_TAB_RPC_TYPES = [

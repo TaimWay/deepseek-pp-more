@@ -5,9 +5,30 @@ import { createRequestGenerationFence } from './async-state';
 import { I18nProvider } from './i18n';
 import { decodeThemeUpdatedEvent } from './runtime-event-codec';
 import { sidepanelRuntimeClient } from './runtime-client';
+import { showToast } from './components/FeedbackSystem';
+import { logError } from '../../core/diagnostics/log-buffer';
 import './style.css';
 
 type DeepSeekTheme = 'light' | 'dark';
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (event) => {
+    const msg = event.message || 'Script error';
+    logError('sidepanel', `Global Error: ${msg}`, event.filename ? `${event.filename}:${event.lineno}` : undefined);
+    // Suppress intrusive toasts for minor resize/extension noise
+    if (!msg.includes('ResizeObserver') && !msg.includes('Extension context invalidated')) {
+      showToast(msg, 'error');
+    }
+  });
+
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason instanceof Error ? event.reason.message : String(event.reason || 'Promise rejected');
+    logError('sidepanel', `Unhandled Rejection: ${reason}`);
+    if (!reason.includes('Extension context invalidated') && !reason.includes('ResizeObserver')) {
+      showToast(reason, 'error');
+    }
+  });
+}
 
 applyStoredTheme();
 

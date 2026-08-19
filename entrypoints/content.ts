@@ -574,6 +574,10 @@ let exportCapabilityScope: ContentResourceScope | null = null;
 let exportDownloadManager: BrowserDownloadManager | null = null;
 let backgroundCapabilityScope: ContentResourceScope | null = null;
 let petCapabilityScope: ContentResourceScope | null = null;
+let inputToolboxScope: ContentResourceScope | null = null;
+let extSearchActiveState = false;
+let agentCallActiveState = false;
+const INPUT_TOOLBOX_ID = 'dpp-input-toolbox';
 
 function contentT(key: LocaleMessageKey, params?: MessageParams): string {
   return currentContentTranslator.t(key, params);
@@ -905,6 +909,7 @@ function createContentCapabilityControllers(): readonly ContentCapabilityControl
       stopBackgroundCapability,
     ),
     createDomCapability("pet", startPetCapability, stopPetCapability),
+    createDomCapability("input-toolbox", startInputToolboxCapability, stopInputToolboxCapability),
     chatController,
   ];
 }
@@ -1241,6 +1246,10 @@ function startBackgroundCapability(
       handle: scheduleContainerBackgroundPatch,
     }),
   );
+  window.addEventListener("resize", scheduleContainerBackgroundPatch, { passive: true });
+  scope.addCleanup("cleanup", () => {
+    window.removeEventListener("resize", scheduleContainerBackgroundPatch);
+  });
   void sendRuntimeMessage<BackgroundConfig | null>({
     type: "GET_BACKGROUND",
   }).then((config) => {
@@ -1269,6 +1278,17 @@ function stopPetCapability(): void {
   removePet();
   currentPetConfig = null;
   document.getElementById(PET_STYLE_ID)?.remove();
+}
+
+function startInputToolboxCapability(scope: ContentResourceScope): void {
+  inputToolboxScope = scope;
+  ensureInputToolbox();
+}
+
+function stopInputToolboxCapability(): void {
+  inputToolboxScope = null;
+  document.getElementById(`${INPUT_TOOLBOX_ID}-left`)?.remove();
+  document.getElementById(`${INPUT_TOOLBOX_ID}-right`)?.remove();
 }
 
 async function dispatchMainWorldMessage(
@@ -8868,6 +8888,17 @@ function stripToolCallTextNodes(root: Element) {
   for (const parent of changedParents) {
     pruneEmptyToolContainers(parent, root);
   }
+  checkAndHideEmptyMessage(root);
+}
+
+function checkAndHideEmptyMessage(root: Element) {
+  const msgEl = root.closest('.ds-message, [class*="message-wrapper"], [class*="Message"]');
+  if (!msgEl || msgEl.hasAttribute('data-dpp-hidden-empty-message')) return;
+  const contentEl = msgEl.querySelector('.ds-markdown, .markdown-body, [class*="content"]') || msgEl;
+  if (!contentEl.textContent?.trim() && !contentEl.querySelector('.dpp-tool-block, .dpp-artifact-results, img, [class*="attachment"]')) {
+    msgEl.setAttribute('data-dpp-hidden-empty-message', 'true');
+    (msgEl as HTMLElement).style.setProperty('display', 'none', 'important');
+  }
 }
 
 /**
@@ -9105,6 +9136,7 @@ function scheduleContainerBackgroundPatch() {
 }
 
 function patchContainerBackgrounds() {
+  ensureInputToolbox();
   if (!document.body.classList.contains("dpp-bg-active")) return;
   const root = document.getElementById("root");
   if (!root) return;
@@ -9488,6 +9520,9 @@ function finishPetDrag(event: PointerEvent) {
     });
     currentPetConfig = config;
     void sendRuntimeMessage({ type: "SAVE_PET", payload: config });
+  } else if (!moved) {
+    // @ts-ignore
+void sendRuntimeMessage({ type: "OPEN_CHAT_WITH_TEXT", text: "" });
   }
 
   // After dragging, reschedule the current looping state because hidePetBubble paused it.
@@ -9853,4 +9888,89 @@ function applyBackground(config: BackgroundConfig | null) {
   if (!existingStyle) document.head.appendChild(styleEl);
 
   patchContainerBackgrounds();
+}
+
+function ensureInputToolbox(): void {
+  if (!inputToolboxScope?.active) return;
+  const inputBox = findDeepSeekInputBox();
+  if (!inputBox) return;
+
+  const fileInput = inputBox.querySelector('input[type="file"]');
+  const uploadBtn = fileInput?.parentElement ||
+    inputBox.querySelector('button[aria-label*="上传"], button[aria-label*="Upload"], button[title*="上传"], button[title*="Upload"], [class*="upload"]') ||
+    inputBox.querySelector('button:has(svg)');
+
+  const rightContainer = uploadBtn?.parentElement || inputBox.lastElementChild;
+  if (!rightContainer) return;
+
+  const leftContainer = rightContainer.parentElement?.firstElementChild;
+
+  const isZh = currentContentLocale === "zh-CN";
+
+  if (leftContainer && !document.getElementById(`${INPUT_TOOLBOX_ID}-left`)) {
+    const leftBox = document.createElement("div");
+    leftBox.id = `${INPUT_TOOLBOX_ID}-left`;
+    leftBox.style.display = "inline-flex";
+    leftBox.style.alignItems = "center";
+    leftBox.style.marginLeft = "8px";
+    
+    leftBox.innerHTML = `
+      <button type="button" class="ds-button ds-button--text ds-button--secondary ds-button--size-m ds-button--icon-only ds-toggle ds-toggle--default ${extSearchActiveState ? 'ds-toggle--active' : ''}" data-dpp-itb="ext-search" title="${isZh ? '联网搜索 (扩展)' : 'Web Search (Ext)'}">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path><path d="M2 12h20"></path></svg>
+        <div class="ds-button__text" style="font-size: 14px; font-weight: 400; line-height: 20px;">${isZh ? '联网搜索 (扩展)' : 'Web Search (Ext)'}</div>
+      </button>
+    `;
+    leftContainer.appendChild(leftBox);
+    
+    leftBox.addEventListener("click", (e) => {
+      const target = (e.target as Element).closest("[data-dpp-itb]");
+      if (!target) return;
+      e.preventDefault();
+      e.stopPropagation();
+      extSearchActiveState = !extSearchActiveState;
+      target.classList.toggle("ds-toggle--active", extSearchActiveState);
+    });
+  }
+
+  let rightBox = document.getElementById(`${INPUT_TOOLBOX_ID}-right`);
+  if (!rightBox) {
+    rightBox = document.createElement("div");
+    rightBox.id = `${INPUT_TOOLBOX_ID}-right`;
+    rightBox.style.display = "inline-flex";
+    rightBox.style.alignItems = "center";
+    rightBox.style.gap = "6px";
+    rightBox.style.marginRight = "6px";
+    
+    rightBox.innerHTML = `
+      <button type="button" class="ds-button ds-button--text ds-button--secondary ds-button--size-m ds-button--icon-only ds-toggle ds-toggle--default ${agentCallActiveState ? 'ds-toggle--active' : ''}" data-dpp-itb="agent-call" title="${isZh ? '允许调用 Agent Call' : 'Allow Agent Call'}">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+      </button>
+      <button type="button" class="ds-button ds-button--text ds-button--secondary ds-button--size-m ds-button--icon-only" data-dpp-itb="memory-manage" title="${isZh ? '记忆管理' : 'Memory Manager'}">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4c-3.86 0-7 3.14-7 7s3.14 7 7 7 7-3.14 7-7-3.14-7-7-7z"></path><path d="M12 4v7l4 2"></path></svg>
+      </button>
+    `;
+
+    rightBox.addEventListener("click", (e) => {
+      const target = (e.target as Element).closest("[data-dpp-itb]");
+      if (!target) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const action = target.getAttribute("data-dpp-itb");
+      if (action === "agent-call") {
+        agentCallActiveState = !agentCallActiveState;
+        target.classList.toggle("ds-toggle--active", agentCallActiveState);
+      } else if (action === "memory-manage") {
+        // @ts-ignore
+void sendRuntimeMessage({ type: "OPEN_CHAT_WITH_TEXT", text: "" });
+      }
+    });
+  }
+
+  if (uploadBtn && uploadBtn.parentElement === rightContainer) {
+    if (rightBox.nextElementSibling !== uploadBtn) {
+      rightContainer.insertBefore(rightBox, uploadBtn);
+    }
+  } else if (rightBox.parentElement !== rightContainer) {
+    rightContainer.prepend(rightBox);
+  }
 }

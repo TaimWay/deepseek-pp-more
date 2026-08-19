@@ -38,6 +38,7 @@ export const DEEPSEEK_WEB_ROUTE_POLICY = {
   uploadFile: { route: 'uploadFile', method: 'POST' },
   fetchFiles: { route: 'fetchFiles', method: 'GET' },
   fetchSessions: { route: 'fetchSessions', method: 'GET' },
+  deleteSession: { route: 'deleteSession', method: 'POST' },
 } as const satisfies DeepSeekWebRoutePolicyMap;
 
 export interface EncodedDeepSeekRequest {
@@ -129,6 +130,21 @@ export function encodeCreateSessionRequest(
     credentials: 'include',
     headers: { 'content-type': 'application/json', ...clientHeaders },
     body: JSON.stringify({}),
+  });
+}
+
+export function encodeDeleteSessionRequest(
+  chatSessionId: string,
+  clientHeaders: Record<string, string>,
+): EncodedDeepSeekRequest {
+  return encodeDeepSeekRouteRequest('deleteSession', {
+    credentials: 'include',
+    headers: {
+      'content-type': 'application/json',
+      [DEEPSEEK_BYPASS_HOOK_HEADER]: '1',
+      ...clientHeaders,
+    },
+    body: JSON.stringify({ chat_session_id: chatSessionId }),
   });
 }
 

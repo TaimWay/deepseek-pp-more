@@ -26,13 +26,17 @@ const TABS: { key: Tab; labelKey: LocaleMessageKey; icon: string }[] = [
   { key: 'settings', labelKey: 'app.tabs.settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
 ];
 
+import { FeedbackProvider } from './components/FeedbackSystem';
+
 export default function App() {
   const { t } = useI18n();
   // Floating-chat surface: when the sidepanel is loaded inside the global
   // floating ball's iframe, drop the nav/whats-new chrome and render chat only.
   const isFloatingChat = typeof window !== 'undefined'
     && new URLSearchParams(window.location.search).get('surface') === 'floating-chat';
-  const [tab, setTab] = useState<Tab>('chat');
+  const isOptionsPage = typeof window !== 'undefined'
+    && (window.location.pathname.includes('options') || new URLSearchParams(window.location.search).get('surface') === 'options');
+  const [tab, setTab] = useState<Tab>(() => (isOptionsPage ? 'settings' : 'chat'));
   const [chatEnabled, setChatEnabledState] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -47,10 +51,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (chatEnabled === false && tab === 'chat') {
+    if (chatEnabled === false && tab === 'chat' && !isOptionsPage) {
       setTab('library');
     }
-  }, [chatEnabled, tab]);
+  }, [chatEnabled, tab, isOptionsPage]);
 
   useEffect(() => {
     const consumer = startPendingTextConsumer({
@@ -64,51 +68,59 @@ export default function App() {
   }, []);
 
   return (
-    <div className={isFloatingChat ? 'ds-app-shell ds-app-shell-floating-chat' : 'ds-app-shell'}>
-      {!isFloatingChat && (
-        <nav className="side-tabs" aria-label={t('app.sideNavLabel')}>
-          {TABS.filter((tabConfig) =>
-            chatEnabled !== false || tabConfig.key !== 'chat'
-          ).map((tabConfig) => {
-            const label = t(tabConfig.labelKey);
-            return (
-              <button
-                key={tabConfig.key}
-                type="button"
-                onClick={() => setTab(tabConfig.key)}
-                className={`side-tab${tab === tabConfig.key ? ' side-tab-active' : ''}`}
-                aria-current={tab === tabConfig.key ? 'page' : undefined}
-                title={label}
-              >
-                <svg
-                  className="side-tab-icon"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  aria-hidden="true"
+    <FeedbackProvider>
+      <div className={
+        isFloatingChat
+          ? 'ds-app-shell ds-app-shell-floating-chat'
+          : isOptionsPage
+            ? 'ds-app-shell ds-app-shell-options'
+            : 'ds-app-shell'
+      }>
+        {!isFloatingChat && (
+          <nav className="side-tabs" aria-label={t('app.sideNavLabel')}>
+            {TABS.filter((tabConfig) =>
+              chatEnabled !== false || tabConfig.key !== 'chat'
+            ).map((tabConfig) => {
+              const label = t(tabConfig.labelKey);
+              return (
+                <button
+                  key={tabConfig.key}
+                  type="button"
+                  onClick={() => setTab(tabConfig.key)}
+                  className={`side-tab${tab === tabConfig.key ? ' side-tab-active' : ''}`}
+                  aria-current={tab === tabConfig.key ? 'page' : undefined}
+                  title={label}
                 >
-                  <path strokeLinecap="round" strokeLinejoin="round" d={tabConfig.icon} />
-                </svg>
-                <span className="side-tab-label">{label}</span>
-                {tab === tabConfig.key && <span className="side-tab-indicator" />}
-              </button>
-            );
-          })}
-        </nav>
-      )}
+                  <svg
+                    className="side-tab-icon"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    aria-hidden="true"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d={tabConfig.icon} />
+                  </svg>
+                  <span className="side-tab-label">{label}</span>
+                  {tab === tabConfig.key && <span className="side-tab-indicator" />}
+                </button>
+              );
+            })}
+          </nav>
+        )}
 
-      <main className="ds-app-main">
-        {!isFloatingChat && <WhatsNewPanel />}
-        <Suspense fallback={<RouteFallback />}>
-          {(isFloatingChat || tab === 'chat') && <ChatPage />}
-          {!isFloatingChat && tab === 'library' && <LibraryPage />}
-          {!isFloatingChat && tab === 'projects' && <ProjectsPage />}
-          {!isFloatingChat && tab === 'capabilities' && <CapabilitiesPage />}
-          {!isFloatingChat && tab === 'settings' && <SettingsPage />}
-        </Suspense>
-      </main>
-    </div>
+        <main className="ds-app-main">
+          {!isFloatingChat && <WhatsNewPanel />}
+          <Suspense fallback={<RouteFallback />}>
+            {(isFloatingChat || tab === 'chat') && <ChatPage />}
+            {!isFloatingChat && tab === 'library' && <LibraryPage />}
+            {!isFloatingChat && tab === 'projects' && <ProjectsPage />}
+            {!isFloatingChat && tab === 'capabilities' && <CapabilitiesPage />}
+            {!isFloatingChat && tab === 'settings' && <SettingsPage />}
+          </Suspense>
+        </main>
+      </div>
+    </FeedbackProvider>
   );
 }
 

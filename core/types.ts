@@ -41,6 +41,7 @@ import type {
   UsageRangeDays as UsageRangeDaysType,
   UsageTurnInput as UsageTurnInputType,
 } from './usage/types';
+import type { ExternalApiConfig } from './external-api/contracts';
 
 export type {
   McpHeaderValue,
@@ -666,7 +667,12 @@ export type MessageAction =
   | { type: 'SAVE_PET'; payload: PetConfig }
   | { type: 'CLEAR_PET' }
   | { type: 'GET_MCP_REQUEST_TIMEOUT' }
-  | { type: 'SET_MCP_REQUEST_TIMEOUT'; payload: { requestTimeoutMs: number } };
+  | { type: 'SET_MCP_REQUEST_TIMEOUT'; payload: { requestTimeoutMs: number } }
+  | { type: 'GET_EXTERNAL_API_STATE' }
+  | { type: 'SAVE_EXTERNAL_API_CONFIG'; payload: ExternalApiConfig }
+  | { type: 'RECONNECT_EXTERNAL_API' }
+  | { type: 'DELETE_DEEPSEEK_SESSIONS'; payload: { sessionIds: string[] } }
+  | { type: 'GET_EXTERNAL_API_SESSIONS' };
 
 export interface PromptConfig {
   memoryTokenBudget: number;

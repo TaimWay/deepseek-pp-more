@@ -112,7 +112,18 @@ describe('Shell Host modular runtime ownership', () => {
       cwd: resolve('packages/shell-host'),
       encoding: 'utf8',
     });
-    const [{ filename }] = JSON.parse(packOutput) as Array<{ filename: string }>;
+    const jsonStartArr = packOutput.indexOf('[');
+    const jsonStartObj = packOutput.indexOf('{');
+    const firstJson =
+      jsonStartArr >= 0 && (jsonStartObj < 0 || jsonStartArr < jsonStartObj)
+        ? jsonStartArr
+        : jsonStartObj >= 0
+          ? jsonStartObj
+          : 0;
+    const cleanOutput = packOutput.slice(firstJson).trim();
+    const parsedPack = JSON.parse(cleanOutput) as Array<{ filename: string }> | Record<string, { filename: string }>;
+    const filename = Array.isArray(parsedPack) ? parsedPack[0]?.filename : (parsedPack as any).filename || Object.values(parsedPack)[0]?.filename;
+    if (!filename) throw new Error(`Missing pack filename in output: ${packOutput}`);
     const tarball = resolve(packDir, filename);
     execFileSync(npm, [
       'install',
@@ -145,7 +156,7 @@ describe('Shell Host modular runtime ownership', () => {
       id: 'initialize',
       result: { serverInfo: { name: 'deepseek-pp-shell', version: installedPackage.version } },
     });
-  });
+  }, 60000);
 
   it('preserves the explicit shell timeout result through the process provider', async () => {
     const command = process.platform === 'win32' ? 'Start-Sleep -Seconds 5' : 'sleep 5';

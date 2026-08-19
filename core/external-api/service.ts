@@ -34,13 +34,21 @@ import {
   type ExternalApiTextContentPart,
   type ExternalApiToolCall,
   type ExternalApiToolDefinition,
+  type ExternalApiSessionMeta,
 } from './contracts';
-import { recordApiKeyUsage, recordExternalApiSession, removeExternalApiSessions } from './store';
+import {
+  loadActiveExternalApiSessions,
+  recordApiKeyUsage,
+  recordExternalApiSession,
+  removeExternalApiSessions,
+} from './store';
 import { isNativeHostAvailable, startRelayProcess } from './process';
+import { logDebug, logInfo, logWarn, logError } from '../diagnostics/log-buffer';
 import type { ToolCall, ToolDescriptor, ToolProviderIdentity, ToolResult } from '../tool/types';
 import type { JsonValue } from '../tool/types';
 import type { RuntimeToolCallOptions } from '../tool/runtime';
 import { extractToolCalls, stripToolCalls } from '../interceptor/tool-parser';
+import { createStreamingToolTextAccumulator } from '../interceptor/streaming-tool-text';
 
 import type { DeepSeekUploadedFile } from '../deepseek/contracts';
 
@@ -78,7 +86,7 @@ export interface ExternalApiServiceDependencies {
       filename: string;
       modelType: string | null;
       clientHeaders: Record<string, string>;
-      powHeaders: Record<string, string>;
+      powHeaders?: Record<string, string>;
     },
     signal?: AbortSignal,
   ): Promise<DeepSeekUploadedFile | null>;
@@ -133,6 +141,8 @@ export interface ExternalApiService {
   ensureConnected(): Promise<void>;
   getStatus(): ExternalApiStatus;
   handleConfigUpdated(newConfig: ExternalApiConfig): Promise<void>;
+  getPendingInterceptions(): Array<{ id: string; timestamp: number; request: BridgeToExtensionChatRequest }>;
+  resolveInterception(id: string, action: 'approve' | 'reject', modified?: BridgeToExtensionChatRequest): boolean;
 }
 
 export interface ResolvedCallPolicy {
@@ -143,6 +153,8 @@ export interface ResolvedCallPolicy {
   enableMemory: boolean;
   effectiveModel: string;
   effectiveBackend: ExternalApiBackend;
+  toolGranularSettings?: Record<string, boolean>;
+  maxToolSteps?: number;
 }
 
 const RECONNECT_INTERVALS_MS = [1000, 2000, 4000, 8000];
@@ -500,10 +512,70 @@ export function createExternalApiService(
     }
   }
 
-  async function processChatCompletionRequest(request: BridgeToExtensionChatRequest) {
+  const sessionStore = new Map<string, ExternalApiSessionMeta>();
+  let sessionsHydrated = false;
+
+  const pendingInterceptions = new Map<
+    string,
+    {
+      request: BridgeToExtensionChatRequest;
+      timestamp: number;
+      resolve: (req: BridgeToExtensionChatRequest) => void;
+      reject: (err: Error) => void;
+    }
+  >();
+
+  async function ensureSessionsHydrated(): Promise<void> {
+    if (sessionsHydrated) return;
+    try {
+      const loaded = await loadActiveExternalApiSessions();
+      for (const [k, v] of loaded) {
+        sessionStore.set(k, v);
+      }
+      sessionsHydrated = true;
+    } catch {
+      // Ignore load failures
+    }
+  }
+
+  async function processChatCompletionRequest(initialRequest: BridgeToExtensionChatRequest) {
+    let request = initialRequest;
     const controller = new AbortController();
     activeControllers.set(request.id, controller);
     emitStatusUpdate();
+
+    await ensureSessionsHydrated();
+
+    const config = currentConfig ?? (await dependencies.getConfig());
+
+    // Request interception gate (Developer Options)
+    if (config.interceptRequests) {
+      logInfo('external_api', `Intercepted request [${request.id}] pending developer approval`);
+      try {
+        request = await new Promise<BridgeToExtensionChatRequest>((resolve, reject) => {
+          pendingInterceptions.set(request.id, {
+            request,
+            timestamp: Date.now(),
+            resolve: (modified) => {
+              pendingInterceptions.delete(request.id);
+              resolve(modified);
+            },
+            reject: (err) => {
+              pendingInterceptions.delete(request.id);
+              reject(err);
+            },
+          });
+        });
+      } catch (interceptionErr) {
+        sendToRelay({
+          type: 'CHAT_ERROR',
+          id: request.id,
+          error: interceptionErr instanceof Error ? interceptionErr.message : 'Request rejected by developer',
+          code: 'request_rejected',
+        });
+        return;
+      }
+    }
 
     const usedKey = request.api_key || request.used_api_key;
     if (usedKey) {
@@ -528,10 +600,22 @@ export function createExternalApiService(
       const allowMultimodal = matchedKey?.allowMultimodal ?? config.allowMultimodal ?? true;
       const injectSystemInfo = matchedKey?.injectSystemInfo ?? config.injectSystemInfo ?? true;
       const enableMemory = matchedKey?.enableMemory ?? config.enableMemory ?? false;
-      const effectiveBackend =
+      let effectiveBackend =
         matchedKey?.backend && matchedKey.backend !== 'auto' ? matchedKey.backend : config.preferredBackend;
       const effectiveModel =
         request.model || matchedKey?.overrideModel || config.defaultModel || 'deepseek-v4-flash';
+
+      const mediaCollection = collectMultimodalMediaInputs(request.messages);
+      const requestedVision = effectiveModel.toLowerCase().includes('vision');
+
+      // If user specifically requested vision model, but official API backend has no multimodal provider configured,
+      // route to DeepSeek Web backend where native vision is supported.
+      if (requestedVision && effectiveBackend === 'auto') {
+        const officialVisionConfigured = await isMultimodalProviderConfigured();
+        if (!officialVisionConfigured) {
+          effectiveBackend = 'web';
+        }
+      }
 
       const callPolicy: ResolvedCallPolicy = {
         isProxyOnly,
@@ -541,11 +625,28 @@ export function createExternalApiService(
         enableMemory,
         effectiveModel,
         effectiveBackend,
+        toolGranularSettings: config.toolGranularSettings,
+        maxToolSteps: config.maxToolSteps,
       };
 
       const shouldUseOfficialApi =
         effectiveBackend === 'official-api' ||
         (effectiveBackend === 'auto' && Boolean(apiKey));
+
+      const lastMessage = request.messages[request.messages.length - 1];
+      const lastMessageContent = extractMessageText(lastMessage?.content);
+      const requestLogDetails = [
+        `Backend: ${shouldUseOfficialApi ? 'official-api' : 'web'}`,
+        `Effective Model: ${effectiveModel}`,
+        `Stream: ${request.stream ?? false}`,
+        `Messages: ${request.messages.length}`,
+        `Session Key: ${getSessionKey(request)}`,
+        `Thinking: ${request.thinking ?? 'auto'}`,
+        `Client Tools: ${request.tools?.length ? request.tools.map((t) => t.function?.name || 'function').join(', ') : 'none'}`,
+        `Last Message (${lastMessage?.role || 'unknown'}): ${lastMessageContent.slice(0, 160)}${lastMessageContent.length > 160 ? '...' : ''}`,
+      ].join('\n');
+
+      logInfo('external_api', `Received request [${request.id}]`, requestLogDetails);
 
       if (shouldUseOfficialApi && apiKey) {
         await executeViaOfficialApi(request, apiKey, callPolicy, controller.signal);
@@ -555,6 +656,7 @@ export function createExternalApiService(
     } catch (err: unknown) {
       if (!controller.signal.aborted) {
         const errorMessage = err instanceof Error ? err.message : String(err);
+        logError('external_api', `Chat request failed: ${request.id}`, errorMessage);
         sendToRelay({
           type: 'CHAT_ERROR',
           id: request.id,
@@ -568,20 +670,38 @@ export function createExternalApiService(
     }
   }
 
-  interface ExternalApiSessionRecord {
-    chatSessionId: string;
-    parentMessageId: number | null;
-    lastUsedAt: number;
-  }
-
-  const sessionStore = new Map<string, ExternalApiSessionRecord>();
   const MAX_CHAT_TOOL_STEPS = 20;
 
   function getSessionKey(request: BridgeToExtensionChatRequest): string {
     if (request.session_id && request.session_id.trim()) {
       return request.session_id.trim();
     }
+    if (request.user && request.user.trim()) {
+      return `user-${request.user.trim()}`;
+    }
+    const firstUserMsg = request.messages.find((m) => m.role === 'user');
+    if (firstUserMsg) {
+      const text = extractMessageText(firstUserMsg.content).trim();
+      if (text) {
+        const cleanSlug = text
+          .replace(/[^\p{L}\p{N}\s_-]/gu, '')
+          .trim()
+          .slice(0, 24)
+          .replace(/\s+/g, '-');
+        let hash = 0;
+        for (let i = 0; i < text.length; i++) {
+          hash = (hash << 5) - hash + text.charCodeAt(i);
+          hash |= 0;
+        }
+        const hex = Math.abs(hash).toString(16).slice(0, 6);
+        return cleanSlug ? `chat-${cleanSlug}-${hex}` : `chat-${hex}`;
+      }
+    }
     return DEFAULT_EXTERNAL_API_SESSION_KEY;
+  }
+
+  function cleanWebSessionText(text: string): string {
+    return text.replace(/^Link reading is unavailable in Expert Mode\. Please use Instant Mode\.\s*/i, '');
   }
 
   function extractMessageText(content?: string | ExternalApiContentPart[] | null): string {
@@ -605,24 +725,61 @@ export function createExternalApiService(
   }
 
   function parseDataUrl(dataUrl: string): { mimeType: string; base64: string } | null {
-    const match = /^data:([^;]+);base64,(.+)$/.exec(dataUrl);
-    if (!match) return null;
-    return { mimeType: match[1].toLowerCase(), base64: match[2] };
+    if (!dataUrl || typeof dataUrl !== 'string') return null;
+    const trimmed = dataUrl.trim();
+    const match = /^data:([a-zA-Z0-9+\/.-]+)(?:;[a-zA-Z0-9_-]+=[^;]+)*;base64,([A-Za-z0-9+/=\r\n\s]+)$/s.exec(trimmed);
+    if (match) {
+      return {
+        mimeType: match[1].toLowerCase(),
+        base64: match[2].replace(/[\r\n\s]+/g, ''),
+      };
+    }
+    const clean = trimmed.replace(/[\r\n\s]+/g, '');
+    if (clean.length > 50 && /^[A-Za-z0-9+/]+=*$/.test(clean)) {
+      let mime = 'image/jpeg';
+      if (clean.startsWith('iVBORw0KGgo')) mime = 'image/png';
+      else if (clean.startsWith('R0lGOD')) mime = 'image/gif';
+      else if (clean.startsWith('UklGR')) mime = 'image/webp';
+      else if (clean.startsWith('/9j/')) mime = 'image/jpeg';
+      return { mimeType: mime, base64: clean };
+    }
+    return null;
   }
 
-  function dataUrlToBlob(dataUrl: string): { blob: Blob; filename: string } | null {
-    const parsed = parseDataUrl(dataUrl);
-    if (!parsed) return null;
+  function base64ToBlob(base64: string, mimeType: string): { blob: Blob; filename: string } | null {
     try {
-      const byteCharacters = atob(parsed.base64);
+      const clean = base64.replace(/[\r\n\s]+/g, '');
+      const byteCharacters = atob(clean);
       const byteNumbers = new Array(byteCharacters.length);
       for (let i = 0; i < byteCharacters.length; i++) {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
       }
       const byteArray = new Uint8Array(byteNumbers);
-      const ext = parsed.mimeType.split('/')[1] || 'png';
+      const ext = mimeType.split('/')[1] || 'png';
       return {
-        blob: new Blob([byteArray], { type: parsed.mimeType }),
+        blob: new Blob([byteArray], { type: mimeType }),
+        filename: `upload_${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function dataUrlToBlob(dataUrl: string): { blob: Blob; filename: string } | null {
+    const parsed = parseDataUrl(dataUrl);
+    if (!parsed) return null;
+    return base64ToBlob(parsed.base64, parsed.mimeType);
+  }
+
+  async function fetchUrlToBlob(url: string, signal?: AbortSignal): Promise<{ blob: Blob; filename: string } | null> {
+    try {
+      const resp = await fetch(url, { signal });
+      if (!resp.ok) return null;
+      const blob = await resp.blob();
+      const mimeType = blob.type || 'image/jpeg';
+      const ext = mimeType.split('/')[1] || 'jpg';
+      return {
+        blob: new Blob([await blob.arrayBuffer()], { type: mimeType }),
         filename: `upload_${Date.now()}.${ext}`,
       };
     } catch {
@@ -644,6 +801,77 @@ export function createExternalApiService(
     dataUrl?: string;
   }
 
+  async function extractAllImageBlobs(
+    messages: ExternalApiChatMessage[],
+    signal?: AbortSignal,
+  ): Promise<Array<{ blob: Blob; filename: string; fileId?: string }>> {
+    const results: Array<{ blob: Blob; filename: string; fileId?: string }> = [];
+
+    for (const msg of messages) {
+      const rawImages = (msg as any).images || (msg as any).files;
+      if (Array.isArray(rawImages)) {
+        for (const img of rawImages) {
+          if (typeof img === 'string') {
+            const parsed = parseDataUrl(img);
+            if (parsed) {
+              const blobInfo = base64ToBlob(parsed.base64, parsed.mimeType);
+              if (blobInfo) results.push(blobInfo);
+            } else if (img.startsWith('http://') || img.startsWith('https://')) {
+              const fetched = await fetchUrlToBlob(img, signal);
+              if (fetched) results.push(fetched);
+            }
+          }
+        }
+      }
+
+      if (Array.isArray(msg.content)) {
+        for (const part of msg.content) {
+          if (!part || typeof part !== 'object') continue;
+          const p = part as any;
+
+          if (p.type === 'image_url') {
+            const url = typeof p.image_url === 'string' ? p.image_url : p.image_url?.url;
+            if (typeof url === 'string') {
+              const parsed = parseDataUrl(url);
+              if (parsed) {
+                const blobInfo = base64ToBlob(parsed.base64, parsed.mimeType);
+                if (blobInfo) results.push(blobInfo);
+              } else if (url.startsWith('http://') || url.startsWith('https://')) {
+                const fetched = await fetchUrlToBlob(url, signal);
+                if (fetched) results.push(fetched);
+              }
+            }
+          } else if (p.type === 'image') {
+            const src = p.source;
+            if (src?.data && typeof src.data === 'string') {
+              const mime = src.media_type || 'image/png';
+              const blobInfo = base64ToBlob(src.data, mime);
+              if (blobInfo) results.push(blobInfo);
+            } else if (typeof p.image === 'string') {
+              const parsed = parseDataUrl(p.image);
+              if (parsed) {
+                const blobInfo = base64ToBlob(parsed.base64, parsed.mimeType);
+                if (blobInfo) results.push(blobInfo);
+              }
+            }
+          } else if (p.type === 'file' || p.type === 'input_file') {
+            if (p.file?.file_id) {
+              results.push({ blob: new Blob([]), filename: '', fileId: p.file.file_id });
+            } else if (p.file?.data && typeof p.file.data === 'string') {
+              const parsed = parseDataUrl(p.file.data);
+              if (parsed) {
+                const blobInfo = base64ToBlob(parsed.base64, parsed.mimeType);
+                if (blobInfo) results.push(blobInfo);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return results;
+  }
+
   function collectMultimodalMediaInputs(messages: ExternalApiChatMessage[]): MultimodalMediaCollection {
     const media: MultimodalMediaInput[] = [];
     let hasUnroutableMedia = false;
@@ -651,11 +879,36 @@ export function createExternalApiService(
     let fileIndex = 0;
 
     for (const msg of messages) {
+      const rawImages = (msg as any).images || (msg as any).files;
+      if (Array.isArray(rawImages)) {
+        for (const img of rawImages) {
+          if (typeof img === 'string') {
+            const parsed = parseDataUrl(img);
+            if (parsed && parsed.mimeType.startsWith('image/')) {
+              const index = imageIndex++;
+              const input = buildMultimodalMediaPartInput({
+                id: `external-media-image-${index}`,
+                kind: 'image',
+                name: `image-${index}.${extensionFromMime(parsed.mimeType)}`,
+                mimeType: parsed.mimeType,
+                base64Body: parsed.base64,
+                dataUrl: `data:${parsed.mimeType};base64,${parsed.base64}`,
+              });
+              if (!input) hasUnroutableMedia = true;
+              else media.push(input);
+            } else {
+              hasUnroutableMedia = true;
+            }
+          }
+        }
+      }
+
       if (!Array.isArray(msg.content)) continue;
       for (const part of msg.content) {
         if (!part || typeof part !== 'object') continue;
-        if (part.type === 'image_url') {
-          const url = (part as ExternalApiImageUrlContentPart).image_url?.url;
+        const p = part as any;
+        if (p.type === 'image_url') {
+          const url = typeof p.image_url === 'string' ? p.image_url : p.image_url?.url;
           const parsed = url ? parseDataUrl(url) : null;
           if (!parsed || !parsed.mimeType.startsWith('image/')) {
             hasUnroutableMedia = true;
@@ -668,12 +921,33 @@ export function createExternalApiService(
             name: `image-${index}.${extensionFromMime(parsed.mimeType)}`,
             mimeType: parsed.mimeType,
             base64Body: parsed.base64,
-            dataUrl: url,
+            dataUrl: url && url.startsWith('data:') ? url : `data:${parsed.mimeType};base64,${parsed.base64}`,
           });
           if (!input) hasUnroutableMedia = true;
           else media.push(input);
-        } else if (part.type === 'file' || part.type === 'input_file') {
-          const file = (part as ExternalApiFileContentPart).file;
+        } else if (p.type === 'image') {
+          const src = p.source;
+          const rawData = src?.data || p.image;
+          const parsed = typeof rawData === 'string' ? parseDataUrl(rawData) : null;
+          const mimeType = (src?.media_type || parsed?.mimeType || 'image/png').toLowerCase();
+          const base64Body = parsed?.base64 || (typeof rawData === 'string' ? rawData : '');
+          if (!base64Body || !mimeType.startsWith('image/')) {
+            hasUnroutableMedia = true;
+            continue;
+          }
+          const index = imageIndex++;
+          const input = buildMultimodalMediaPartInput({
+            id: `external-media-image-${index}`,
+            kind: 'image',
+            name: `image-${index}.${extensionFromMime(mimeType)}`,
+            mimeType,
+            base64Body,
+            dataUrl: `data:${mimeType};base64,${base64Body}`,
+          });
+          if (!input) hasUnroutableMedia = true;
+          else media.push(input);
+        } else if (p.type === 'file' || p.type === 'input_file') {
+          const file = p.file;
           if (!file || typeof file.data !== 'string' || !file.data) {
             hasUnroutableMedia = true;
             continue;
@@ -681,15 +955,13 @@ export function createExternalApiService(
           let mimeType = (file.mime_type || '').toLowerCase();
           let base64Body = file.data;
           let dataUrl: string | undefined;
-          if (file.data.startsWith('data:')) {
+          if (file.data.startsWith('data:') || file.data.length > 50) {
             const parsed = parseDataUrl(file.data);
-            if (!parsed) {
-              hasUnroutableMedia = true;
-              continue;
+            if (parsed) {
+              mimeType = parsed.mimeType;
+              base64Body = parsed.base64;
+              dataUrl = `data:${mimeType};base64,${base64Body}`;
             }
-            mimeType = parsed.mimeType;
-            base64Body = parsed.base64;
-            dataUrl = file.data;
           }
           if (!mimeType.startsWith('image/') && !mimeType.startsWith('video/')) {
             hasUnroutableMedia = true;
@@ -728,9 +1000,10 @@ export function createExternalApiService(
   }
 
   function base64DecodedLength(value: string): number | null {
-    if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) return null;
-    const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
-    return Math.floor(value.length / 4) * 3 - padding;
+    const clean = value.replace(/[\r\n\s]+/g, '');
+    if (!/^[A-Za-z0-9+/]+=*$/.test(clean)) return null;
+    const padding = clean.endsWith('==') ? 2 : clean.endsWith('=') ? 1 : 0;
+    return Math.floor(clean.length / 4) * 3 - padding;
   }
 
   function extensionFromMime(mimeType: string): string {
@@ -747,13 +1020,24 @@ export function createExternalApiService(
     }
   }
 
-  function serializeToolExecutions(executions: readonly ExternalApiToolExecutionRecord[]): string {
+  function serializeToolExecutions(
+    executions: readonly ExternalApiToolExecutionRecord[],
+    webModelType?: string | null,
+  ): string {
     return executions
       .map((execution) => {
-        const detail =
+        let detail =
           typeof execution.result.output === 'string'
             ? execution.result.output
             : JSON.stringify(execution.result.output ?? execution.result.detail ?? execution.result.summary);
+
+        // DeepSeek Web in expert mode (R1) intercepts raw http:// and https:// URLs in user prompts
+        // and emits "Link reading is unavailable in Expert Mode. Please use Instant Mode."
+        // We sanitize raw URL schemes in tool results when feeding back to DeepSeek Web in expert mode.
+        if (webModelType === 'expert') {
+          detail = detail.replace(/https?:\/\//gi, 'source-url://');
+        }
+
         return `<${execution.name}_result>\n${detail}\n</${execution.name}_result>`;
       })
       .join('\n');
@@ -867,6 +1151,8 @@ export function createExternalApiService(
       let fullText = '';
       let fullReasoning = '';
       let lastChunkTime = Date.now();
+      const textAccumulator = createStreamingToolTextAccumulator(availableDescriptors);
+      let lastEmittedLength = 0;
 
       const stallChecker = setInterval(() => {
         if (Date.now() - lastChunkTime > STREAM_STALL_TIMEOUT_MS) {
@@ -896,12 +1182,17 @@ export function createExternalApiService(
             onTextChunk: (chunk, acc) => {
               lastChunkTime = Date.now();
               fullText = acc;
-              sendToRelay({
-                type: 'CHAT_CHUNK',
-                id: request.id,
-                text_delta: chunk,
-                phase: 'answer',
-              });
+              const visible = textAccumulator.append(chunk);
+              if (visible.length > lastEmittedLength) {
+                const delta = visible.slice(lastEmittedLength);
+                lastEmittedLength = visible.length;
+                sendToRelay({
+                  type: 'CHAT_CHUNK',
+                  id: request.id,
+                  text_delta: delta,
+                  phase: 'answer',
+                });
+              }
             },
             onReasoningChunk: (chunk, acc) => {
               lastChunkTime = Date.now();
@@ -918,6 +1209,18 @@ export function createExternalApiService(
         );
       } finally {
         clearInterval(stallChecker);
+      }
+
+      const finalVisible = textAccumulator.flush();
+      if (finalVisible.length > lastEmittedLength) {
+        const delta = finalVisible.slice(lastEmittedLength);
+        lastEmittedLength = finalVisible.length;
+        sendToRelay({
+          type: 'CHAT_CHUNK',
+          id: request.id,
+          text_delta: delta,
+          phase: 'answer',
+        });
       }
 
       const rawAssistantText = turn.assistantText || fullText;
@@ -992,11 +1295,17 @@ export function createExternalApiService(
         const executions: ExternalApiToolExecutionRecord[] = [];
         for (const call of toolCalls) {
           sendToRelay({
-            type: 'CHAT_CHUNK',
+            type: 'TOOL_EVENT',
             id: request.id,
-            reasoning_delta: `\n[Executing ${call.name}...]\n`,
-            phase: 'reasoning',
+            tool_name: call.name,
+            status: 'started',
           });
+
+          logInfo(
+            'external_api',
+            `Executing Agent Call [${call.name}] for request ${request.id}`,
+            JSON.stringify({ tool: call.name, payload: call.payload }, null, 2),
+          );
 
           let result: ToolResult;
           try {
@@ -1005,6 +1314,13 @@ export function createExternalApiService(
             });
           } catch (execErr) {
             const errMessage = execErr instanceof Error ? execErr.message : String(execErr);
+            sendToRelay({
+              type: 'TOOL_EVENT',
+              id: request.id,
+              tool_name: call.name,
+              status: 'failed',
+              result: errMessage,
+            });
             sendToRelay({
               type: 'CHAT_ERROR',
               id: request.id,
@@ -1018,6 +1334,20 @@ export function createExternalApiService(
             provider: call.provider,
             result,
           });
+
+          sendToRelay({
+            type: 'TOOL_EVENT',
+            id: request.id,
+            tool_name: call.name,
+            status: result.ok ? 'succeeded' : 'failed',
+            result: typeof result.output === 'string' ? result.output : JSON.stringify(result.output ?? result.detail ?? ''),
+          });
+
+          logInfo(
+            'external_api',
+            `Agent Call completed [${call.name}] result=${result.ok ? 'SUCCESS' : 'FAILED'}`,
+            result.summary || result.detail || (typeof result.output === 'string' ? result.output : ''),
+          );
         }
 
         const serialized = serializeToolExecutions(executions);
@@ -1027,6 +1357,10 @@ export function createExternalApiService(
         messages = [...messages, { role: 'user', content: toolResultContent }];
       } else {
         // No executor available, finish as stop
+        const promptTokens = Math.ceil(messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) / 4);
+        const completionTokens = Math.ceil(rawAssistantText.length / 4);
+        const totalTokens = promptTokens + completionTokens;
+
         sendToRelay({
           type: 'CHAT_DONE',
           id: request.id,
@@ -1034,15 +1368,17 @@ export function createExternalApiService(
           full_text: stripToolCalls(rawAssistantText, { descriptors: availableDescriptors }),
           full_reasoning: turn.reasoningText || fullReasoning || undefined,
           usage: {
-            prompt_tokens: Math.ceil(messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) / 4),
-            completion_tokens: Math.ceil(rawAssistantText.length / 4),
-            total_tokens: Math.ceil(
-              (messages.reduce((acc, m) => acc + (m.content?.length || 0), 0) +
-                rawAssistantText.length) /
-                4,
-            ),
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: totalTokens,
           },
         });
+
+        logInfo(
+          'external_api',
+          `Official API Request Completed [${request.id}]`,
+          `Tokens: ${promptTokens} prompt + ${completionTokens} completion = ${totalTokens} total`,
+        );
         return;
       }
     }
@@ -1065,111 +1401,147 @@ export function createExternalApiService(
     }
 
     const sessionKey = getSessionKey(request);
+    await ensureSessionsHydrated();
     let session = sessionStore.get(sessionKey);
     let chatSessionId: string;
     let parentMessageId: number | null = null;
     let isFirstTurn = false;
+    const refFileIds: string[] = [];
 
-    if (session) {
+    const userMessages = request.messages.filter((m) => m.role === 'user');
+    const assistantMessages = request.messages.filter((m) => m.role === 'assistant');
+    const firstUserMsg = userMessages[0];
+    const firstUserText = firstUserMsg ? extractMessageText(firstUserMsg.content).trim() : '';
+
+    // If there are assistant messages, this is turn 2+ of a conversation.
+    // If there are 0 assistant messages, the external program is initiating a brand new conversation.
+    const isMultiTurnTranscript = assistantMessages.length > 0;
+
+    const canResumeExistingSession =
+      Boolean(session) &&
+      isMultiTurnTranscript &&
+      (!session?.firstUserMessage || session.firstUserMessage === firstUserText);
+
+    if (session && canResumeExistingSession) {
       chatSessionId = session.chatSessionId;
-      parentMessageId = session.parentMessageId;
+      parentMessageId = session.parentMessageId ?? null;
       session.lastUsedAt = Date.now();
-      void recordExternalApiSession({
-        chatSessionId,
-        sessionKey,
-        createdAt: session.lastUsedAt,
-        lastUsedAt: Date.now(),
-        messageCount: 2,
-        model: callPolicy.effectiveModel,
-      });
+      session.messageCount = (session.messageCount || 1) + 1;
+      if (!session.firstUserMessage && firstUserText) {
+        session.firstUserMessage = firstUserText;
+      }
+      await recordExternalApiSession(session);
     } else {
       chatSessionId = await dependencies.createChatSession(headers, signal);
       isFirstTurn = true;
       session = {
         chatSessionId,
+        sessionKey,
         parentMessageId: null,
         lastUsedAt: Date.now(),
-      };
-      sessionStore.set(sessionKey, session);
-      void recordExternalApiSession({
-        chatSessionId,
-        sessionKey,
         createdAt: Date.now(),
-        lastUsedAt: Date.now(),
         messageCount: 1,
         model: callPolicy.effectiveModel,
-      });
+        refFileIds: [],
+        firstUserMessage: firstUserText,
+      };
+      sessionStore.set(sessionKey, session);
+      await recordExternalApiSession(session);
     }
 
-    const powHeaders = await dependencies.createPowHeaders(headers, signal);
-
-    // Multimodal image attachments handling
-    const refFileIds: string[] = [];
+    // Multimodal image attachments handling: extract strictly from current request
     let hasImages = false;
+    refFileIds.length = 0;
 
     if (callPolicy.allowMultimodal) {
-      for (const msg of request.messages) {
-        if (Array.isArray(msg.content)) {
-          for (const part of msg.content) {
-            if (part && typeof part === 'object') {
-              if (part.type === 'image_url' && (part as ExternalApiImageUrlContentPart).image_url?.url) {
-                const url = (part as ExternalApiImageUrlContentPart).image_url.url;
-                if (url.startsWith('data:')) {
-                  const blobInfo = dataUrlToBlob(url);
-                  if (blobInfo && dependencies.uploadFile) {
-                    try {
-                      const uploaded = await dependencies.uploadFile(
-                        {
-                          file: blobInfo.blob,
-                          filename: blobInfo.filename,
-                          modelType: 'vision',
-                          clientHeaders: headers,
-                          powHeaders,
-                        },
-                        signal,
-                      );
-                      if (uploaded?.id) {
-                        refFileIds.push(uploaded.id);
-                        hasImages = true;
-                      }
-                    } catch (err) {
-                      dependencies.reportError?.('external_api_file_upload_failed', err);
-                    }
-                  }
-                }
-              } else if (part.type === 'file' || part.type === 'input_file') {
-                const fileId = (part as ExternalApiFileContentPart).file?.file_id;
-                if (fileId) {
-                  refFileIds.push(fileId);
-                  hasImages = true;
-                }
-              }
+      const extractedImages = await extractAllImageBlobs(request.messages, signal);
+      for (const img of extractedImages) {
+        if (img.fileId) {
+          if (!refFileIds.includes(img.fileId)) refFileIds.push(img.fileId);
+          hasImages = true;
+        } else if (img.blob && img.blob.size > 0 && dependencies.uploadFile) {
+          try {
+            const uploaded = await dependencies.uploadFile(
+              {
+                file: img.blob,
+                filename: img.filename,
+                modelType: 'vision',
+                clientHeaders: headers,
+              },
+              signal,
+            );
+            if (uploaded?.id) {
+              if (!refFileIds.includes(uploaded.id)) refFileIds.push(uploaded.id);
+              hasImages = true;
             }
+          } catch (err) {
+            dependencies.reportError?.('external_api_file_upload_failed', err);
+            logError('external_api', `Image upload failed for ${img.filename}`, err instanceof Error ? err.message : String(err));
           }
         }
       }
     }
 
-    const effectiveModelType = hasImages && callPolicy.allowMultimodal ? 'vision' : webModelType;
+    const effectiveModelType = (hasImages || refFileIds.length > 0) && callPolicy.allowMultimodal ? 'vision' : webModelType;
 
     const clientDescriptors = convertClientToolsToDescriptors(request.tools);
-    const builtInDescriptors =
+    const allBuiltInDescriptors =
       callPolicy.allowAgentTools && dependencies.getToolDescriptors
         ? await dependencies.getToolDescriptors().catch(() => [])
         : [];
+    
+    // Apply granular tool settings
+    const builtInDescriptors = allBuiltInDescriptors.filter((d) => {
+      if (callPolicy.toolGranularSettings && d.name in callPolicy.toolGranularSettings) {
+        return callPolicy.toolGranularSettings[d.name] !== false;
+      }
+      return true;
+    });
+
     let availableDescriptors: ToolDescriptor[] = [...builtInDescriptors, ...clientDescriptors];
+
+    const hasChineseContent = /[\u4e00-\u9fa5]/.test(
+      request.messages.map((m) => extractMessageText(m.content)).join(' ')
+    );
+    const defaultImagePrompt = hasChineseContent
+      ? '请查看并详细分析上传的图片与文件内容。'
+      : 'Please examine and analyze the attached image or file content.';
 
     // Prepare prompt and descriptors for this turn
     let initialPrompt = '';
 
-    if (isFirstTurn) {
+    if (isFirstTurn && isMultiTurnTranscript) {
+      // Historical transcript ported to a new session: format full multi-turn context
+      const formattedTranscript = formatMessagesForWebPrompt(request.messages);
+      if (dependencies.buildPrompt) {
+        const buildRes = await dependencies.buildPrompt({
+          prompt: formattedTranscript,
+          isFirstMessage: true,
+          messageCount: request.messages.length,
+          allowAgentTools: callPolicy.allowAgentTools,
+          injectSystemInfo: callPolicy.injectSystemInfo,
+          enableMemory: callPolicy.enableMemory,
+          effectiveModel: callPolicy.effectiveModel,
+          clientTools: request.tools,
+        });
+        initialPrompt = buildRes.augmented;
+        availableDescriptors = [
+          ...builtInDescriptors,
+          ...buildRes.enabledDescriptors,
+          ...clientDescriptors,
+        ];
+      } else {
+        initialPrompt = formattedTranscript;
+      }
+    } else if (isFirstTurn) {
       const systemMessages = request.messages
         .filter((m) => m.role === 'system')
         .map((m) => extractMessageText(m.content))
         .filter(Boolean)
         .join('\n\n');
-      const firstUserMsg =
+      const rawFirstUser =
         extractMessageText(request.messages.find((m) => m.role === 'user')?.content) || '';
+      const firstUserMsg = rawFirstUser || (hasImages ? defaultImagePrompt : '');
 
       if (dependencies.buildPrompt) {
         const buildRes = await dependencies.buildPrompt({
@@ -1201,7 +1573,8 @@ export function createExternalApiService(
         const toolContent = extractMessageText(lastMsg.content);
         initialPrompt = `[Tool Results]:\nTool "${lastMsg.name || lastMsg.tool_call_id || 'function'}":\n${toolContent}`;
       } else if (lastMsg.role === 'user') {
-        const userContent = extractMessageText(lastMsg.content);
+        const rawUserContent = extractMessageText(lastMsg.content);
+        const userContent = rawUserContent || (hasImages ? defaultImagePrompt : '');
         if (dependencies.buildPrompt) {
           const buildRes = await dependencies.buildPrompt({
             prompt: userContent,
@@ -1235,6 +1608,11 @@ export function createExternalApiService(
       let fullText = '';
       let fullReasoning = '';
       let lastChunkTime = Date.now();
+      const textAccumulator = createStreamingToolTextAccumulator(availableDescriptors);
+      let lastEmittedLength = 0;
+
+      // CRITICAL: Generate fresh PoW challenges on EACH step because DeepSeek Web consumes PoW tokens per request.
+      const stepPowHeaders = await dependencies.createPowHeaders(headers, signal);
 
       const stallChecker = setInterval(() => {
         if (Date.now() - lastChunkTime > STREAM_STALL_TIMEOUT_MS) {
@@ -1260,54 +1638,61 @@ export function createExternalApiService(
             thinkingEnabled,
             searchEnabled: false,
             clientHeaders: headers,
-            powHeaders,
+            powHeaders: stepPowHeaders,
           },
           {
             onTextChunk: (chunk, acc) => {
               lastChunkTime = Date.now();
               fullText = acc;
-              sendToRelay({
-                type: 'CHAT_CHUNK',
-                id: request.id,
-                text_delta: chunk,
-                phase: 'answer',
-              });
+              const visible = textAccumulator.append(chunk);
+              if (visible.length > lastEmittedLength) {
+                const delta = visible.slice(lastEmittedLength);
+                lastEmittedLength = visible.length;
+                sendToRelay({
+                  type: 'CHAT_CHUNK',
+                  id: request.id,
+                  text_delta: delta,
+                  phase: 'answer',
+                });
+              }
             },
             onReasoningChunk: (chunk, acc) => {
               lastChunkTime = Date.now();
               fullReasoning = acc;
-              sendToRelay({
-                type: 'CHAT_CHUNK',
-                id: request.id,
-                reasoning_delta: chunk,
-                phase: 'reasoning',
-              });
+              if (chunk && chunk.trim().length > 0) {
+                sendToRelay({
+                  type: 'CHAT_CHUNK',
+                  id: request.id,
+                  reasoning_delta: chunk,
+                  phase: 'reasoning',
+                });
+              }
             },
           },
           signal,
         );
       } catch (submitErr) {
         const errMsg = submitErr instanceof Error ? submitErr.message : String(submitErr);
+        logWarn('external_api', `submitWebPrompt error on step ${stepCount}`, errMsg);
         // If the session was deleted or not found on DeepSeek Web, recover by creating a fresh session
-        if (!isFirstTurn && (errMsg.includes('not found') || errMsg.includes('session') || errMsg.includes('404') || errMsg.includes('400'))) {
+        if (!isFirstTurn && (errMsg.includes('not found') || errMsg.includes('session') || errMsg.includes('404'))) {
           sessionStore.delete(sessionKey);
           chatSessionId = await dependencies.createChatSession(headers, signal);
           parentMessageId = null;
           session = {
             chatSessionId,
+            sessionKey,
             parentMessageId: null,
             lastUsedAt: Date.now(),
+            createdAt: Date.now(),
+            messageCount: 1,
+            model: callPolicy.effectiveModel,
+            refFileIds,
           };
           sessionStore.set(sessionKey, session);
-          void recordExternalApiSession({
-            chatSessionId,
-            sessionKey,
-            createdAt: Date.now(),
-            lastUsedAt: Date.now(),
-            messageCount: 1,
-            model: request.model,
-          });
+          void recordExternalApiSession(session);
           currentPrompt = formatMessagesForWebPrompt(request.messages);
+          const retryPowHeaders = await dependencies.createPowHeaders(headers, signal);
           turn = await dependencies.submitWebPrompt(
             {
               chatSessionId,
@@ -1318,28 +1703,35 @@ export function createExternalApiService(
               thinkingEnabled,
               searchEnabled: false,
               clientHeaders: headers,
-              powHeaders,
+              powHeaders: retryPowHeaders,
             },
             {
               onTextChunk: (chunk, acc) => {
                 lastChunkTime = Date.now();
                 fullText = acc;
-                sendToRelay({
-                  type: 'CHAT_CHUNK',
-                  id: request.id,
-                  text_delta: chunk,
-                  phase: 'answer',
-                });
+                const visible = textAccumulator.append(chunk);
+                if (visible.length > lastEmittedLength) {
+                  const delta = visible.slice(lastEmittedLength);
+                  lastEmittedLength = visible.length;
+                  sendToRelay({
+                    type: 'CHAT_CHUNK',
+                    id: request.id,
+                    text_delta: delta,
+                    phase: 'answer',
+                  });
+                }
               },
               onReasoningChunk: (chunk, acc) => {
                 lastChunkTime = Date.now();
                 fullReasoning = acc;
-                sendToRelay({
-                  type: 'CHAT_CHUNK',
-                  id: request.id,
-                  reasoning_delta: chunk,
-                  phase: 'reasoning',
-                });
+                if (chunk && chunk.trim().length > 0) {
+                  sendToRelay({
+                    type: 'CHAT_CHUNK',
+                    id: request.id,
+                    reasoning_delta: chunk,
+                    phase: 'reasoning',
+                  });
+                }
               },
             },
             signal,
@@ -1352,10 +1744,25 @@ export function createExternalApiService(
         clearInterval(stallChecker);
       }
 
+      const finalVisible = textAccumulator.flush();
+      if (finalVisible.length > lastEmittedLength) {
+        const delta = finalVisible.slice(lastEmittedLength);
+        lastEmittedLength = finalVisible.length;
+        sendToRelay({
+          type: 'CHAT_CHUNK',
+          id: request.id,
+          text_delta: delta,
+          phase: 'answer',
+        });
+      }
+
       const responseMessageId = turn.responseMessageId ?? parentMessageId;
       parentMessageId = responseMessageId;
       session.parentMessageId = responseMessageId;
+      session.refFileIds = refFileIds;
       session.lastUsedAt = Date.now();
+      sessionStore.set(sessionKey, session);
+      await recordExternalApiSession(session);
 
       const rawAssistantText = turn.assistantText || fullText;
 
@@ -1364,11 +1771,19 @@ export function createExternalApiService(
         descriptors: availableDescriptors,
       });
 
+      const executedToolNames: string[] = [];
+      let hasToolError = false;
+
       if (toolCalls.length === 0) {
         // Normal final completion
-        const cleanFinalText = stripToolCalls(rawAssistantText, {
-          descriptors: availableDescriptors,
-        });
+        const cleanFinalText = cleanWebSessionText(
+          stripToolCalls(rawAssistantText, {
+            descriptors: availableDescriptors,
+          }),
+        );
+        const promptTokens = Math.ceil(currentPrompt.length / 4);
+        const completionTokens = Math.ceil(cleanFinalText.length / 4);
+        const totalTokens = promptTokens + completionTokens;
 
         sendToRelay({
           type: 'CHAT_DONE',
@@ -1377,11 +1792,24 @@ export function createExternalApiService(
           full_text: cleanFinalText,
           full_reasoning: fullReasoning || undefined,
           usage: {
-            prompt_tokens: Math.ceil(currentPrompt.length / 4),
-            completion_tokens: Math.ceil(cleanFinalText.length / 4),
-            total_tokens: Math.ceil((currentPrompt.length + cleanFinalText.length) / 4),
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: totalTokens,
           },
         });
+
+        if (session) {
+          session.promptTokens = (session.promptTokens || 0) + promptTokens;
+          session.completionTokens = (session.completionTokens || 0) + completionTokens;
+          session.totalTokens = (session.totalTokens || 0) + totalTokens;
+          await recordExternalApiSession(session);
+        }
+
+        logInfo(
+          'external_api',
+          `Web Session Request Completed [${request.id}]`,
+          `Model: ${callPolicy.effectiveModel}, Tokens: ${promptTokens} prompt + ${completionTokens} completion = ${totalTokens} total`,
+        );
         break;
       }
 
@@ -1399,20 +1827,32 @@ export function createExternalApiService(
             arguments: typeof c.payload === 'string' ? c.payload : JSON.stringify(c.payload),
           },
         }));
+        const promptTokens = Math.ceil(currentPrompt.length / 4);
+        const completionTokens = Math.ceil(rawAssistantText.length / 4);
+        const totalTokens = promptTokens + completionTokens;
 
         sendToRelay({
           type: 'CHAT_DONE',
           id: request.id,
           finish_reason: 'tool_calls',
-          full_text: stripToolCalls(rawAssistantText, { descriptors: availableDescriptors }),
+          full_text: cleanWebSessionText(stripToolCalls(rawAssistantText, { descriptors: availableDescriptors })),
           full_reasoning: fullReasoning || undefined,
           tool_calls: openAiToolCalls,
           usage: {
-            prompt_tokens: Math.ceil(currentPrompt.length / 4),
-            completion_tokens: Math.ceil(rawAssistantText.length / 4),
-            total_tokens: Math.ceil((currentPrompt.length + rawAssistantText.length) / 4),
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: totalTokens,
           },
         });
+
+        if (session) {
+          session.promptTokens = (session.promptTokens || 0) + promptTokens;
+          session.completionTokens = (session.completionTokens || 0) + completionTokens;
+          session.totalTokens = (session.totalTokens || 0) + totalTokens;
+          session.agentCallCount = (session.agentCallCount || 0) + openAiToolCalls.length;
+          session.lastAgentTools = clientCalls.map((c) => c.name);
+          await recordExternalApiSession(session);
+        }
         break;
       }
 
@@ -1420,41 +1860,98 @@ export function createExternalApiService(
       if (callPolicy.allowAgentTools && dependencies.executeToolCall) {
         const executions: ExternalApiToolExecutionRecord[] = [];
         for (const call of toolCalls) {
+          executedToolNames.push(call.name);
           sendToRelay({
-            type: 'CHAT_CHUNK',
+            type: 'TOOL_EVENT',
             id: request.id,
-            reasoning_delta: `\n[Executing ${call.name}...]\n`,
-            phase: 'reasoning',
+            tool_name: call.name,
+            status: 'started',
           });
 
-          const result = await dependencies.executeToolCall(call, {
-            trustedCapabilityScopeId: `external_api:${request.id}`,
-          });
+          logInfo(
+            'external_api',
+            `Executing Agent Call [${call.name}] for request ${request.id}`,
+            JSON.stringify({ tool: call.name, payload: call.payload }, null, 2),
+          );
+
+          let result: ToolResult;
+          try {
+            result = await dependencies.executeToolCall(call, {
+              trustedCapabilityScopeId: `external_api:${request.id}`,
+            });
+          } catch (err) {
+            hasToolError = true;
+            result = {
+              ok: false,
+              name: call.name,
+              summary: 'Tool execution failed',
+              detail: err instanceof Error ? err.message : String(err),
+            };
+          }
+          if (!result.ok) hasToolError = true;
           executions.push({
             name: call.name,
             provider: call.provider,
             result,
           });
+
+          sendToRelay({
+            type: 'TOOL_EVENT',
+            id: request.id,
+            tool_name: call.name,
+            status: result.ok ? 'succeeded' : 'failed',
+            result: typeof result.output === 'string' ? result.output : JSON.stringify(result.output ?? result.detail ?? ''),
+          });
+
+          logInfo(
+            'external_api',
+            `Agent Call completed [${call.name}] result=${result.ok ? 'SUCCESS' : 'FAILED'}`,
+            result.summary || result.detail || (typeof result.output === 'string' ? result.output : ''),
+          );
         }
 
-        const serialized = serializeToolExecutions(executions);
+        if (session) {
+          session.agentCallCount = (session.agentCallCount || 0) + executedToolNames.length;
+          session.lastAgentTools = Array.from(new Set([...(session.lastAgentTools || []), ...executedToolNames]));
+          session.lastToolStatus = hasToolError ? 'failed' : 'success';
+          await recordExternalApiSession(session);
+        }
+
+        const serialized = serializeToolExecutions(executions, effectiveModelType);
         currentPrompt = dependencies.continueWithToolResults
           ? dependencies.continueWithToolResults(serialized)
           : `[Tool Results]:\n${serialized}`;
       } else {
         // No executor available, finish as stop
+        const promptTokens = Math.ceil(currentPrompt.length / 4);
+        const completionTokens = Math.ceil(rawAssistantText.length / 4);
+        const totalTokens = promptTokens + completionTokens;
+
         sendToRelay({
           type: 'CHAT_DONE',
           id: request.id,
           finish_reason: 'stop',
-          full_text: stripToolCalls(rawAssistantText, { descriptors: availableDescriptors }),
+          full_text: cleanWebSessionText(stripToolCalls(rawAssistantText, { descriptors: availableDescriptors })),
           full_reasoning: fullReasoning || undefined,
           usage: {
-            prompt_tokens: Math.ceil(currentPrompt.length / 4),
-            completion_tokens: Math.ceil(rawAssistantText.length / 4),
-            total_tokens: Math.ceil((currentPrompt.length + rawAssistantText.length) / 4),
+            prompt_tokens: promptTokens,
+            completion_tokens: completionTokens,
+            total_tokens: totalTokens,
           },
         });
+
+        if (session) {
+          session.promptTokens = (session.promptTokens || 0) + promptTokens;
+          session.completionTokens = (session.completionTokens || 0) + completionTokens;
+          session.totalTokens = (session.totalTokens || 0) + totalTokens;
+          await recordExternalApiSession(session);
+        }
+
+        logInfo(
+          'external_api',
+          `Web Session Request Completed [${request.id}]`,
+          `Model: ${callPolicy.effectiveModel}, Tokens: ${promptTokens} prompt + ${completionTokens} completion = ${totalTokens} total`,
+        );
         break;
       }
     }
@@ -1585,6 +2082,23 @@ export function createExternalApiService(
       } else {
         emitStatusUpdate();
       }
+    },
+    getPendingInterceptions() {
+      return Array.from(pendingInterceptions.values()).map((p) => ({
+        id: p.request.id,
+        timestamp: p.timestamp,
+        request: p.request,
+      }));
+    },
+    resolveInterception(id: string, action: 'approve' | 'reject', modified?: BridgeToExtensionChatRequest) {
+      const item = pendingInterceptions.get(id);
+      if (!item) return false;
+      if (action === 'approve') {
+        item.resolve(modified || item.request);
+      } else {
+        item.reject(new Error('Request rejected by developer'));
+      }
+      return true;
     },
   };
 }

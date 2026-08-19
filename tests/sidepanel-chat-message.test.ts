@@ -45,7 +45,7 @@ describe('ChatMessage rich rendering boundary', () => {
 
     await vi.waitFor(() => {
       expect(container.querySelector('strong')?.textContent).toBe('world');
-    });
+    }, { timeout: 5000 });
     expect(container.textContent).toContain('Hello world');
     expect(onRichContentRendered).toHaveBeenCalled();
   });

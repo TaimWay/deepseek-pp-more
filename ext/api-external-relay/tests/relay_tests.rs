@@ -1,9 +1,9 @@
 use api_external_relay::bridge::BridgeManager;
 use api_external_relay::handlers::{
-    chat_completions_handler, health_handler, list_models_handler, AppState,
+    chat_completions_handler, get_model_handler, health_handler, list_models_handler, AppState,
 };
 use api_external_relay::types::{
-    BridgeFromExtensionMessage, BridgeToExtensionMessage, ChatCompletionResponse,
+    BridgeFromExtensionMessage, BridgeToExtensionMessage, ChatCompletionResponse, ModelCard,
     ModelListResponse, ToolEventStatus, Usage,
 };
 use axum::{
@@ -27,6 +27,8 @@ fn create_test_router(api_key: Option<String>) -> (Router, Arc<BridgeManager>) {
         .route("/health", get(health_handler))
         .route("/models", get(list_models_handler))
         .route("/v1/models", get(list_models_handler))
+        .route("/models/{model}", get(get_model_handler))
+        .route("/v1/models/{model}", get(get_model_handler))
         .route("/chat/completions", post(chat_completions_handler))
         .route("/v1/chat/completions", post(chat_completions_handler))
         .with_state(app_state);
@@ -67,6 +69,24 @@ async fn test_models_list_endpoint() {
     assert_eq!(models.object, "list");
     assert!(models.data.iter().any(|m| m.id == "deepseek-v4-flash"));
     assert!(models.data.iter().any(|m| m.id == "deepseek-v4-pro"));
+}
+
+#[tokio::test]
+async fn test_single_model_endpoint() {
+    let (app, _) = create_test_router(None);
+    let req = Request::builder()
+        .uri("/v1/models/deepseek-v4-pro")
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    let model: ModelCard = serde_json::from_slice(&body).unwrap();
+    assert_eq!(model.id, "deepseek-v4-pro");
+    assert_eq!(model.object, "model");
+    assert_eq!(model.owned_by, "deepseek-pp");
 }
 
 #[tokio::test]

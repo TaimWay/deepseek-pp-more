@@ -80,6 +80,22 @@ pub async fn list_models_handler(State(state): State<AppState>) -> impl IntoResp
     })
 }
 
+pub async fn get_model_handler(
+    axum::extract::Path(model_id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    Json(ModelCard {
+        id: model_id,
+        object: "model".to_string(),
+        created: now,
+        owned_by: "deepseek-pp".to_string(),
+    })
+}
+
 // ----------------------------------------------------------------------------
 // Chat Completions (/v1/chat/completions and /chat/completions)
 // ----------------------------------------------------------------------------
@@ -89,6 +105,18 @@ pub async fn chat_completions_handler(
     headers: HeaderMap,
     Json(payload): Json<ChatCompletionRequest>,
 ) -> Response {
+    let mut payload = payload;
+    if payload.session_id.is_none() {
+        let session_header = headers
+            .get("x-session-id")
+            .or_else(|| headers.get("x-conversation-id"))
+            .or_else(|| headers.get("x-chat-id"))
+            .and_then(|h| h.to_str().ok())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        payload.session_id = session_header.or_else(|| payload.user.clone());
+    }
+
     // 1. Authentication check (supports multi-key or CLI fallback)
     let auth_header = headers
         .get("authorization")

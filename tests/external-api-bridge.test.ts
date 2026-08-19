@@ -3,6 +3,7 @@ import {
   DEFAULT_EXTERNAL_API_CONFIG,
   EXTERNAL_API_MODEL_CATALOG,
   EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE,
+  type BridgeFromExtensionChatChunk,
   type BridgeFromExtensionMessage,
   type BridgeFromExtensionToolEvent,
   type BridgeToExtensionChatRequest,
@@ -75,8 +76,20 @@ class MockWebSocket {
 describe('External API Service Bridge', () => {
   let activeMockSocket: MockWebSocket | null = null;
   let mockConfig: ExternalApiConfig;
+  let mockStorage: Record<string, unknown> = {};
 
   beforeEach(() => {
+    mockStorage = {};
+    globalThis.chrome = {
+      storage: {
+        local: {
+          get: vi.fn(async (key: string) => ({ [key]: mockStorage[key] })),
+          set: vi.fn(async (items: Record<string, unknown>) => {
+            Object.assign(mockStorage, items);
+          }),
+        },
+      },
+    } as unknown as typeof chrome;
     mockConfig = { ...DEFAULT_EXTERNAL_API_CONFIG };
     vi.mocked(getMultimodalSettingsStatus).mockResolvedValue({
       openaiConfigured: false,
@@ -120,6 +133,7 @@ describe('External API Service Bridge', () => {
       }),
       executeToolCall: vi.fn(async () => ({ ok: true, summary: 'ok', detail: 'ok' })),
       buildPrompt: vi.fn(async ({ prompt }) => ({ augmented: prompt, enabledDescriptors: [] })),
+      uploadFile: vi.fn(async () => null),
       WebSocketImpl: class extends MockWebSocket {
         constructor(url: string) {
           super(url);
@@ -368,6 +382,109 @@ describe('External API Service Bridge', () => {
     // Must advance parentMessageId to previous responseMessageId (2)
     expect(receivedInputs[1].parentMessageId).toBe(2);
     expect(receivedInputs[1].prompt).toBe('Now add docstrings');
+
+    // Turn 3: User opens a brand new chat (0 assistant messages) -> Starts a fresh session
+    (deps.createChatSession as any).mockResolvedValueOnce('session-fresh-456');
+    const request3: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-turn-3-new-chat',
+      session_id: 'conversation-thread-100',
+      model: 'deepseek-v4-flash',
+      messages: [
+        { role: 'user', content: 'Brand new topic' },
+      ],
+      stream: false,
+      thinking: false,
+      reasoning_effort: 'low',
+    };
+
+    activeMockSocket!.simulateServerMessage(request3);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(deps.createChatSession).toHaveBeenCalledTimes(2);
+    expect(receivedInputs[2].chatSessionId).toBe('session-fresh-456');
+    expect(receivedInputs[2].parentMessageId).toBeNull();
+    expect(receivedInputs[2].prompt).toContain('Brand new topic');
+
+    service.stop();
+  });
+
+  it('recovers gracefully by creating a fresh session when continuing a stale/deleted session', async () => {
+    const receivedInputs: any[] = [];
+    let submitCallCount = 0;
+    const deps = createTestDependencies({
+      getDeepSeekApiKey: vi.fn(async () => null),
+      createChatSession: vi.fn()
+        .mockResolvedValueOnce('session-stale-1')
+        .mockResolvedValueOnce('session-recovered-2'),
+      submitWebPrompt: vi.fn(async (input, callbacks) => {
+        submitCallCount++;
+        receivedInputs.push(input);
+        if (submitCallCount === 1) {
+          // Turn 1 initial success
+          callbacks.onTextChunk?.('Answer 1', 'Answer 1');
+          return {
+            assistantText: 'Answer 1',
+            finished: true,
+            requestMessageId: 10,
+            responseMessageId: 20,
+          };
+        }
+        if (submitCallCount === 2) {
+          // Turn 2 fails with session not found (e.g. deleted on web)
+          throw new Error('Chat session not found (404)');
+        }
+        // Turn 2 retry on recovered session
+        callbacks.onTextChunk?.('Recovered Answer', 'Recovered Answer');
+        return {
+          assistantText: 'Recovered Answer',
+          finished: true,
+          requestMessageId: 30,
+          responseMessageId: 40,
+        };
+      }),
+    });
+    const service = createExternalApiService(deps);
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Turn 1
+    activeMockSocket!.simulateServerMessage({
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-t1',
+      session_id: 'sess-recover-test',
+      model: 'deepseek-v4-flash',
+      messages: [{ role: 'user', content: 'Turn 1 prompt' }],
+      stream: false,
+      thinking: false,
+      reasoning_effort: 'low',
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Turn 2 (multi-turn, encounters 404, should auto-recover)
+    activeMockSocket!.simulateServerMessage({
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-t2',
+      session_id: 'sess-recover-test',
+      model: 'deepseek-v4-flash',
+      messages: [
+        { role: 'user', content: 'Turn 1 prompt' },
+        { role: 'assistant', content: 'Answer 1' },
+        { role: 'user', content: 'Turn 2 prompt' },
+      ],
+      stream: false,
+      thinking: false,
+      reasoning_effort: 'low',
+    });
+    await new Promise((r) => setTimeout(r, 40));
+
+    expect(deps.createChatSession).toHaveBeenCalledTimes(2);
+    // 3rd submitWebPrompt call was the recovered call on session-recovered-2
+    expect(receivedInputs.length).toBe(3);
+    expect(receivedInputs[2].chatSessionId).toBe('session-recovered-2');
+    expect(receivedInputs[2].parentMessageId).toBeNull();
+    expect(receivedInputs[2].prompt).toContain('Turn 1 prompt');
+    expect(receivedInputs[2].prompt).toContain('Turn 2 prompt');
 
     service.stop();
   });
@@ -690,11 +807,16 @@ describe('External API Service Bridge', () => {
     expect(deps.submitOfficialPrompt).toHaveBeenCalledTimes(2);
 
     const sent = activeMockSocket!.sentMessages.map((m) => JSON.parse(m) as BridgeFromExtensionMessage);
-    const reasoningChunk = sent.find(
-      (m): m is Extract<BridgeFromExtensionMessage, { type: 'CHAT_CHUNK' }> =>
-        m.type === 'CHAT_CHUNK' && (m.reasoning_delta ?? '').includes('[Executing fs_list...]'),
+    const toolStarted = sent.find(
+      (m): m is Extract<BridgeFromExtensionMessage, { type: 'TOOL_EVENT' }> =>
+        m.type === 'TOOL_EVENT' && m.tool_name === 'fs_list' && m.status === 'started',
     );
-    expect(reasoningChunk).toBeDefined();
+    expect(toolStarted).toBeDefined();
+    const toolSucceeded = sent.find(
+      (m): m is Extract<BridgeFromExtensionMessage, { type: 'TOOL_EVENT' }> =>
+        m.type === 'TOOL_EVENT' && m.tool_name === 'fs_list' && m.status === 'succeeded',
+    );
+    expect(toolSucceeded).toBeDefined();
     const done = sent.find((m) => m.type === 'CHAT_DONE');
     expect(done).toBeDefined();
     expect(done?.finish_reason).toBe('stop');
@@ -1171,6 +1293,390 @@ describe('External API Service Bridge', () => {
     const result = await startRelayProcess({ host: '127.0.0.1', port: 3000, apiKey: '' });
 
     expect(result.message).not.toBe(EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE);
+  });
+
+  it('suppresses tool XML tags during streaming chunks and continues agent loop cleanly', async () => {
+    let callStep = 0;
+    const executedTools: ToolCall[] = [];
+    const deps = createTestDependencies({
+      getDeepSeekApiKey: vi.fn(async () => null),
+      executeToolCall: vi.fn(async (call: ToolCall) => {
+        executedTools.push(call);
+        return {
+          ok: true,
+          name: call.name,
+          output: JSON.stringify([{ title: 'World Anvil', url: 'https://worldanvil.com' }]),
+          detail: 'found 1 result',
+        };
+      }),
+      getToolDescriptors: vi.fn(async () => [
+        {
+          id: 'local:web_search',
+          name: 'web_search',
+          title: 'web_search',
+          invocationName: 'web_search',
+          provider: {
+            kind: 'local' as const,
+            id: 'web',
+            displayName: 'Web',
+            transport: 'in_process' as const,
+          },
+          description: 'Search the web',
+          inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+          execution: { mode: 'auto' as const, enabled: true, risk: 'low' as const },
+        },
+      ]),
+      submitWebPrompt: vi.fn(async (input, callbacks) => {
+        callStep++;
+        if (callStep === 1) {
+          callbacks.onTextChunk?.('Let me search that for you.\n\n<web_search>\n{"query": "worldbuilding"}\n</web_search>', 'Let me search that for you.\n\n<web_search>\n{"query": "worldbuilding"}\n</web_search>');
+          return {
+            assistantText: 'Let me search that for you.\n\n<web_search>\n{"query": "worldbuilding"}\n</web_search>',
+            finished: true,
+            requestMessageId: 1,
+            responseMessageId: 2,
+          };
+        } else {
+          callbacks.onTextChunk?.('Based on search results, World Anvil is great.', 'Based on search results, World Anvil is great.');
+          return {
+            assistantText: 'Based on search results, World Anvil is great.',
+            finished: true,
+            requestMessageId: 3,
+            responseMessageId: 4,
+          };
+        }
+      }),
+    });
+    const service = createExternalApiService(deps);
+
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const request: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-streaming-tool',
+      model: 'deepseek-v4-flash',
+      messages: [{ role: 'user', content: 'Search worldbuilding tools' }],
+      stream: true,
+      thinking: false,
+      reasoning_effort: 'high',
+    };
+
+    activeMockSocket!.simulateServerMessage(request);
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(deps.executeToolCall).toHaveBeenCalledTimes(1);
+    expect(executedTools[0].name).toBe('web_search');
+    expect(deps.submitWebPrompt).toHaveBeenCalledTimes(2);
+
+    const sent = activeMockSocket!.sentMessages.map((m) => JSON.parse(m) as BridgeFromExtensionMessage);
+    const chunks = sent.filter((m): m is BridgeFromExtensionChatChunk => m.type === 'CHAT_CHUNK' && Boolean(m.text_delta));
+    // Ensure no chunk contains <web_search> or XML tool call syntax
+    for (const chunk of chunks) {
+      expect(chunk.text_delta).not.toContain('<web_search>');
+      expect(chunk.text_delta).not.toContain('</web_search>');
+    }
+
+    const done = sent.find((m) => m.type === 'CHAT_DONE');
+    expect(done).toBeDefined();
+    expect(done?.finish_reason).toBe('stop');
+    expect(done?.full_text).not.toContain('<web_search>');
+    expect(done?.full_text).toContain('Based on search results, World Anvil is great.');
+
+    service.stop();
+  });
+
+  it('extracts and uploads images in multiple standard formats (data URL, raw base64, msg.images)', async () => {
+    const uploadedFiles: Array<{ filename: string; modelType: string }> = [];
+    const deps = createTestDependencies({
+      getDeepSeekApiKey: vi.fn(async () => null),
+      uploadFile: vi.fn(async (input: { file: Blob; filename: string; modelType: string }) => {
+        uploadedFiles.push({ filename: input.filename, modelType: input.modelType });
+        return {
+          id: `file-${uploadedFiles.length}`,
+          filename: input.filename,
+          size: input.file.size,
+          status: 'SUCCESS' as const,
+        };
+      }),
+      submitWebPrompt: vi.fn(async () => ({
+        assistantText: 'I can see the image.',
+        finished: true,
+        requestMessageId: 1,
+        responseMessageId: 2,
+      })),
+    });
+    const service = createExternalApiService(deps);
+
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Send request with both image_url and msg.images formats
+    const request: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-multimodal-formats',
+      model: 'deepseek-v4-vision',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Describe these pictures' },
+            {
+              type: 'image_url',
+              image_url: {
+                url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+              },
+            },
+          ],
+        },
+        {
+          role: 'user',
+          content: 'Here is another one',
+          images: [
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+          ],
+        } as any,
+      ],
+      stream: false,
+      thinking: false,
+      reasoning_effort: 'high',
+    };
+
+    activeMockSocket!.simulateServerMessage(request);
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(deps.uploadFile).toHaveBeenCalledTimes(2);
+    expect(uploadedFiles[0].modelType).toBe('vision');
+    expect(uploadedFiles[1].modelType).toBe('vision');
+
+    expect(deps.submitWebPrompt).toHaveBeenCalledTimes(1);
+    const submitCallInput = deps.submitWebPrompt.mock.calls[0][0];
+    expect(submitCallInput.modelType).toBe('vision');
+    expect(submitCallInput.refFileIds).toEqual(['file-1', 'file-2']);
+
+    service.stop();
+  });
+
+  it('preserves session context and parentMessageId across multiple turns and service restarts', async () => {
+    let turnCount = 0;
+    const deps = createTestDependencies({
+      getDeepSeekApiKey: vi.fn(async () => null),
+      createChatSession: vi.fn(async () => 'chat-session-persistent-1'),
+      submitWebPrompt: vi.fn(async (input: { parentMessageId: number | null }) => {
+        turnCount++;
+        return {
+          assistantText: `Response ${turnCount}`,
+          finished: true,
+          requestMessageId: turnCount * 2 - 1,
+          responseMessageId: turnCount * 2,
+        };
+      }),
+    });
+
+    const service1 = createExternalApiService(deps);
+    await service1.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Turn 1
+    const request1: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-turn-1',
+      model: 'deepseek-v4-flash',
+      messages: [{ role: 'user', content: 'Turn 1 user' }],
+      stream: false,
+      thinking: false,
+      reasoning_effort: 'high',
+    };
+    activeMockSocket!.simulateServerMessage(request1);
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(deps.createChatSession).toHaveBeenCalledTimes(1);
+    expect(deps.submitWebPrompt).toHaveBeenCalledTimes(1);
+    expect(deps.submitWebPrompt.mock.calls[0][0].parentMessageId).toBeNull();
+    service1.stop();
+
+    // Now create a fresh service instance (simulating extension reload / service worker wake up)
+    const service2 = createExternalApiService(deps);
+    await service2.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Turn 2
+    const request2: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-turn-2',
+      model: 'deepseek-v4-flash',
+      messages: [
+        { role: 'user', content: 'Turn 1 user' },
+        { role: 'assistant', content: 'Response 1' },
+        { role: 'user', content: 'Turn 2 user' },
+      ],
+      stream: false,
+      thinking: false,
+      reasoning_effort: 'high',
+    };
+    activeMockSocket!.simulateServerMessage(request2);
+    await new Promise((r) => setTimeout(r, 30));
+
+    // createChatSession should NOT be called again because the session was hydrated from storage!
+    expect(deps.createChatSession).toHaveBeenCalledTimes(1);
+    expect(deps.submitWebPrompt).toHaveBeenCalledTimes(2);
+    // parentMessageId on turn 2 should be the responseMessageId from turn 1 (which was 2)
+    expect(deps.submitWebPrompt.mock.calls[1][0].parentMessageId).toBe(2);
+
+    service2.stop();
+  });
+
+  it('generates a fresh PoW challenge on each step of multi-step agent tool execution', async () => {
+    let callStep = 0;
+    const powCalls: number[] = [];
+    const deps = createTestDependencies({
+      getDeepSeekApiKey: vi.fn(async () => null),
+      getToolDescriptors: vi.fn(async () => [
+        {
+          id: 'local:web:web_search',
+          name: 'web_search',
+          invocationName: 'web_search',
+          provider: {
+            kind: 'local' as const,
+            id: 'web',
+            displayName: 'Web',
+            transport: 'in_process' as const,
+          },
+          description: 'Search the web',
+          inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+          execution: { mode: 'auto' as const, enabled: true, risk: 'low' as const },
+        },
+      ]),
+      createPowHeaders: vi.fn(async () => {
+        const count = powCalls.length + 1;
+        powCalls.push(count);
+        return { 'x-pow': `solved-${count}` };
+      }),
+      submitWebPrompt: vi.fn(async (input: { powHeaders?: Record<string, string> }) => {
+        callStep++;
+        if (callStep === 1) {
+          return {
+            assistantText: 'Let me search.\n<web_search>{"query":"test"}</web_search>',
+            finished: true,
+            requestMessageId: 1,
+            responseMessageId: 2,
+          };
+        }
+        return {
+          assistantText: 'Final search result.',
+          finished: true,
+          requestMessageId: 3,
+          responseMessageId: 4,
+        };
+      }),
+    });
+
+    const service = createExternalApiService(deps);
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const request: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-multi-pow',
+      model: 'deepseek-v4-flash',
+      messages: [{ role: 'user', content: 'Test search' }],
+      stream: false,
+      thinking: false,
+      reasoning_effort: 'high',
+    };
+
+    activeMockSocket!.simulateServerMessage(request);
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(deps.createPowHeaders).toHaveBeenCalledTimes(2);
+    expect(deps.submitWebPrompt.mock.calls[0][0].powHeaders).toEqual({ 'x-pow': 'solved-1' });
+    expect(deps.submitWebPrompt.mock.calls[1][0].powHeaders).toEqual({ 'x-pow': 'solved-2' });
+
+    service.stop();
+  });
+
+  it('sanitizes tool result URLs in expert mode and cleans DeepSeek link reading notice', async () => {
+    let callStep = 0;
+    const deps = createTestDependencies({
+      getDeepSeekApiKey: vi.fn(async () => null),
+      buildPrompt: vi.fn(async ({ prompt }) => ({
+        augmented: prompt,
+        enabledDescriptors: [
+          {
+            id: 'builtin:web_search',
+            name: 'web_search',
+            title: 'web_search',
+            invocationName: 'web_search',
+            provider: {
+              kind: 'local',
+              id: 'builtin',
+              displayName: 'Built-in',
+              transport: 'in_process',
+            },
+            description: 'Search the web',
+            inputSchema: { type: 'object', properties: {} },
+            execution: { mode: 'auto', enabled: true, risk: 'low' },
+          },
+        ],
+      })),
+      executeToolCall: vi.fn(async () => ({
+        ok: true,
+        name: 'web_search',
+        summary: 'Search completed',
+        output: '1. [Result](https://geometry-dash.fandom.com/wiki/BOOBAWAMBA)\nBOOBAWAMBA details',
+      })),
+      submitWebPrompt: vi.fn(async (input, callbacks) => {
+        callStep++;
+        if (callStep === 1) {
+          callbacks.onTextChunk?.('<web_search>{"query":"boobawamba"}</web_search>', '<web_search>{"query":"boobawamba"}</web_search>');
+          return {
+            assistantText: '<web_search>{"query":"boobawamba"}</web_search>',
+            finished: true,
+            requestMessageId: 1,
+            responseMessageId: 2,
+          };
+        }
+        // Turn 2 receives sanitized tool results and DeepSeek prepends link reading warning
+        callbacks.onTextChunk?.('Link reading is unavailable in Expert Mode. Please use Instant Mode. BOOBAWAMBA is a level.', 'Link reading is unavailable in Expert Mode. Please use Instant Mode. BOOBAWAMBA is a level.');
+        return {
+          assistantText: 'Link reading is unavailable in Expert Mode. Please use Instant Mode. BOOBAWAMBA is a level.',
+          finished: true,
+          requestMessageId: 3,
+          responseMessageId: 4,
+        };
+      }),
+    });
+
+    const service = createExternalApiService(deps);
+    await service.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    const request: BridgeToExtensionChatRequest = {
+      type: 'CHAT_COMPLETION_REQUEST',
+      id: 'req-expert-search',
+      model: 'deepseek-v4-pro', // Maps to expert mode
+      messages: [{ role: 'user', content: '帮我搜索 boobawamba' }],
+      stream: false,
+      thinking: true,
+      reasoning_effort: 'high',
+    };
+
+    activeMockSocket!.simulateServerMessage(request);
+    await new Promise((r) => setTimeout(r, 60));
+
+    // Turn 2 prompt must have sanitized https:// to source-url://
+    expect(deps.submitWebPrompt).toHaveBeenCalledTimes(2);
+    expect(deps.submitWebPrompt.mock.calls[1][0].prompt).toContain('source-url://');
+    expect(deps.submitWebPrompt.mock.calls[1][0].prompt).not.toContain('https://');
+
+    // Final response must have stripped "Link reading is unavailable in Expert Mode. Please use Instant Mode."
+    const sent = activeMockSocket!.sentMessages.map((m) => JSON.parse(m) as BridgeFromExtensionMessage);
+    const done = sent.find((m) => m.type === 'CHAT_DONE');
+    expect(done).toBeDefined();
+    expect(done?.full_text).toBe('BOOBAWAMBA is a level.');
+    expect(done?.full_text).not.toContain('Link reading is unavailable');
+
+    service.stop();
   });
 });
 

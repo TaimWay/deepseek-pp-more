@@ -121,4 +121,8 @@ export interface DeepSeekRuntimeCommandContracts {
     request: { type: 'AUTH_STATUS_CHANGED' };
     response: Ack;
   };
+  DELETE_DEEPSEEK_SESSIONS: {
+    request: { type: 'DELETE_DEEPSEEK_SESSIONS'; payload: { sessionIds: string[] } };
+    response: { ok: true; deletedCount: number; failedIds?: string[] } | DomainFailure;
+  };
 }

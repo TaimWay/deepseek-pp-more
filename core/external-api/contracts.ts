@@ -109,6 +109,13 @@ export interface ExternalApiConfig {
   allowMultimodal: boolean;
   injectSystemInfo: boolean;
   enableMemory: boolean;
+  debugMode: boolean;
+  interceptRequests: boolean;
+  maxToolSteps: number;
+  toolTimeoutSeconds: number;
+  toolGranularSettings: Record<string, boolean>;
+  customCorsOrigins: string;
+  autoRefreshLogInterval: number;
 }
 
 export const DEFAULT_EXTERNAL_API_CONFIG: ExternalApiConfig = {
@@ -127,6 +134,22 @@ export const DEFAULT_EXTERNAL_API_CONFIG: ExternalApiConfig = {
   allowMultimodal: true,
   injectSystemInfo: true,
   enableMemory: false,
+  debugMode: false,
+  interceptRequests: false,
+  maxToolSteps: 20,
+  toolTimeoutSeconds: 30,
+  toolGranularSettings: {
+    web_search: true,
+    web_fetch: true,
+    fs_list: true,
+    fs_read: true,
+    fs_write: false,
+    cmd_run: false,
+    browser_action: true,
+    page_content: true,
+  },
+  customCorsOrigins: '*',
+  autoRefreshLogInterval: 0,
 };
 
 export const EXTERNAL_API_RELAY_AUTH_GATE_MESSAGE =
@@ -193,6 +216,7 @@ export interface BridgeToExtensionChatRequest {
   used_api_key?: string;
   api_key?: string;
   session_id?: string;
+  user?: string;
   tools?: ExternalApiToolDefinition[];
   tool_choice?: unknown;
 }
@@ -305,6 +329,15 @@ export interface ExternalApiSessionMeta {
   lastUsedAt: number;
   messageCount: number;
   model: string;
+  parentMessageId?: number | null;
+  refFileIds?: string[];
+  firstUserMessage?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  agentCallCount?: number;
+  lastAgentTools?: string[];
+  lastToolStatus?: 'success' | 'failed' | 'idle';
 }
 
 

@@ -47,6 +47,7 @@ interface DecodedDeepSeekRuntimePayloads {
   SAVE_OFFICIAL_API_CHAT_CONFIG: OfficialApiChatConfig;
   EXPORT_DEEPSEEK_CONVERSATIONS: NormalizedConversationExportCommand;
   CANCEL_DEEPSEEK_EXPORT: { exportId?: string };
+  DELETE_DEEPSEEK_SESSIONS: { sessionIds: string[] };
 }
 
 export type DeepSeekRuntimePayloadCommandType = keyof DecodedDeepSeekRuntimePayloads;
@@ -128,6 +129,13 @@ export const DEEPSEEK_RUNTIME_PAYLOAD_DECODERS: DeepSeekRuntimePayloadDecoderMap
     return {
       exportId: typeof payload.exportId === 'string' ? payload.exportId : undefined,
     };
+  },
+  DELETE_DEEPSEEK_SESSIONS(value) {
+    const payload = recordValue(value, 'DELETE_DEEPSEEK_SESSIONS.payload');
+    const sessionIds = Array.isArray(payload.sessionIds)
+      ? payload.sessionIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+      : [];
+    return { sessionIds };
   },
 };
 

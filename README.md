@@ -5,7 +5,7 @@
 <h1 align="center">DeepSeek++ More</h1>
 
 <p align="center">
-  <strong>DeepSeek++ More：把 DeepSeek 网页版扩展成支持中英文体验、记忆、项目、Skill、MCP、多模态媒体、浏览器控制、保存项、产物下载、对话导出和自动化的 AI Agent 工作台</strong>
+  <strong>DeepSeek++ More：把 DeepSeek 网页版扩展成支持中英文体验、记忆、项目、Skill、MCP、多模态媒体、浏览器控制、保存项、产物下载、开放 API、对话导出和自动化的优化 AI Agent 工作台</strong>
 </p>
 
 <p align="center">
@@ -40,6 +40,8 @@ DeepSeek++ 是面向 [DeepSeek](https://chat.deepseek.com) 网页版的开源浏
 
 语言可设为跟随浏览器、简体中文或 English。DeepSeek++ 会让侧边栏、右键菜单、工具结果、内置 Skill 行为和自动续跑提示保持一致语言，同时保留用户自己写的记忆、预设、自定义 Skill、自动化任务和同步数据原文。
 
+DeepSeek++ More 是一个相对于原版而言更加激进的项目，它提供了开放 API 以供外部 AI 软件通过扩展中转使用 OpenAI 格式的 API 直接调用网页免费 API，只需一个浏览器，就能把他接入到其他 Agent 里（不过还是推荐干一些小活）。
+
 ## 目录
 
 - [产品定位](#产品定位)
@@ -69,6 +71,7 @@ DeepSeek++ 是面向 [DeepSeek](https://chat.deepseek.com) 网页版的开源浏
 | DeepSeek prompt controls / 提示词控制 | 控制记忆、系统提示词、预设注入频率和回复语言，适合在不同任务之间快速切换。 |
 | DeepSeek automation / 自动化任务 | 把固定任务放入独立 DeepSeek 会话，支持立即运行、定时触发、状态追踪和手动停止。 |
 | DeepSeek web search / 网页获取 | 在需要实时信息或指定网页内容时搜索互联网、读取网页文本，并继续生成最终回答。 |
+| DeepSeek Open API / 开放 API| 将网页免费 API 通过本地 OpenAI API 接入到外部 AI 工具里，就像是 DeepSeek API，但是依赖于网页，只需要后台挂载浏览器 |
 
 ## 适合场景
 
@@ -80,6 +83,7 @@ DeepSeek++ 是面向 [DeepSeek](https://chat.deepseek.com) 网页版的开源浏
 - 希望把项目背景、个人偏好、常用工作流和文档处理能力沉淀为长期记忆与可复用 Skill。
 - 希望把自己的 DeepSeek 对话记录本地备份为可读文件，便于归档、迁移或后续检索。
 - 希望让 DeepSeek 处理需要多步工具执行、联网搜索、网页读取或定时跟踪的任务。
+- 希望临时使用免费 DeepSeek 救急，接入 Agent 完成未能完成的项目
 
 ## 核心功能
 
@@ -95,6 +99,7 @@ DeepSeek++ 是面向 [DeepSeek](https://chat.deepseek.com) 网页版的开源浏
 - **识图图片附件** — 识图模式下可主动选择或粘贴图片，图片只会在用户发送本次消息时进入 DeepSeek 对话
 - **独立新会话** — 侧边栏对话支持新建会话，减少和当前页面已有对话互相干扰
 - **流式展示** — 回复会在侧边栏内持续渲染，登录状态缺失时会提示先回到 DeepSeek 页面完成登录
+- **开放 API** — 只需进行一次简单的部署，就能得到非常强大的 API，只需要你的网页账户，完全免费
 
 ### 中英文体验
 

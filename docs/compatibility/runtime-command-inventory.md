@@ -128,7 +128,7 @@ CLEAR_TOOL_CALL_HISTORY
 GET_PLATFORM_CAPABILITIES
 ```
 
-### R4.3 / #362 — DeepSeek, chat, multimodal, and export (16)
+### R4.3 / #362 — DeepSeek, chat, multimodal, and export (17)
 
 ```text
 GET_DEEPSEEK_API_KEY_STATUS
@@ -147,9 +147,10 @@ SAVE_OFFICIAL_API_CHAT_CONFIG
 EXPORT_DEEPSEEK_CONVERSATIONS
 CANCEL_DEEPSEEK_EXPORT
 AUTH_STATUS_CHANGED
+DELETE_DEEPSEEK_SESSIONS
 ```
 
-### R4.4 / #363 — Sync, automation, usage, scenario, and lifecycle closure (18)
+### R4.4 / #363 — Sync, automation, usage, scenario, and lifecycle closure (22)
 
 ```text
 RECORD_USAGE_TURN
@@ -170,11 +171,15 @@ DELETE_AUTOMATION
 RUN_AUTOMATION_NOW
 SCENARIOS_UPDATED
 EXPORT_DIAGNOSTIC_LOGS
+GET_EXTERNAL_API_STATE
+SAVE_EXTERNAL_API_CONFIG
+RECONNECT_EXTERNAL_API
+GET_EXTERNAL_API_SESSIONS
 ```
 
 `TOOL_CALL_EXECUTED` and `MEMORIES_UPDATED` remain declared-only compatibility records. They are not counted in the 129 live command owners and R3.1 must classify them explicitly rather than invent handlers.
 
-## Live Background Router — 131
+## Live Background Router — 136
 
 ```text
 GET_MEMORIES
@@ -308,9 +313,14 @@ SET_AUTOMATION_STATUS
 DELETE_AUTOMATION
 RUN_AUTOMATION_NOW
 SCENARIOS_UPDATED
+GET_EXTERNAL_API_STATE
+SAVE_EXTERNAL_API_CONFIG
+RECONNECT_EXTERNAL_API
+DELETE_DEEPSEEK_SESSIONS
+GET_EXTERNAL_API_SESSIONS
 ```
 
-## Declared `MessageAction` Union — 100
+## Declared `MessageAction` Union — 105
 
 ```text
 GET_MEMORIES
@@ -413,6 +423,11 @@ SAVE_PET
 CLEAR_PET
 GET_MCP_REQUEST_TIMEOUT
 SET_MCP_REQUEST_TIMEOUT
+GET_EXTERNAL_API_STATE
+SAVE_EXTERNAL_API_CONFIG
+RECONNECT_EXTERNAL_API
+DELETE_DEEPSEEK_SESSIONS
+GET_EXTERNAL_API_SESSIONS
 ```
 
 ## Live Router Only — 33

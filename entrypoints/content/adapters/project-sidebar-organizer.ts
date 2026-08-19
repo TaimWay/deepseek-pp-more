@@ -19,6 +19,11 @@ import { injectInjectedThemeStyles } from '../../../core/ui/injected-theme';
 import { decodeProjectContextState } from '../../../core/project/codec';
 import { isUsableProjectConversationTitle } from '../../../core/project/title';
 import { isExtensionContextInvalidatedError } from '../../../core/platform/chrome-api';
+import {
+  DEFAULT_EXTERNAL_API_SESSION_KEY,
+  EXTERNAL_API_SESSIONS_STORAGE_KEY,
+  type ExternalApiSessionMeta,
+} from '../../../core/external-api/contracts';
 
 export interface ProjectSidebarOrganizerController {
   stop(): void;
@@ -47,12 +52,33 @@ export interface ProjectSidebarOrganizerLabels {
   untitledConversation: string;
   operationFailed: (message: string) => string;
   age: (timestamp: number) => string;
+  externalApiTitle?: string;
+  batchManage?: string;
+  exitBatchManage?: string;
+  batchConfirmDelete?: (count: number) => string;
+  batchConfirmSub?: string;
+  batchDeleting?: string;
+  confirmDelete?: string;
+  cancel?: string;
+  selectedCount?: (count: number) => string;
+  batchDelete?: string;
+  selectAll?: string;
+  unselectAll?: string;
+  selectExternal?: (count: number) => string;
+  expandExternalApi?: string;
+  collapseExternalApi?: string;
+  noExternalSessions?: string;
+  deleteExternalSession?: string;
+  testBadge?: string;
 }
 
 const PROJECT_SECTION_ID = 'dpp-project-sidebar';
 const PROJECT_STYLE_ID = 'dpp-project-sidebar-css';
 const PROJECT_HIDDEN_ATTR = 'data-dpp-project-sidebar-hidden';
 const NATIVE_MENU_ENHANCER_ATTR = 'data-dpp-project-native-menu';
+const BATCH_INDICATOR_CLASS = 'dpp-batch-checkbox-indicator';
+const BATCH_SELECTED_ATTR = 'data-dpp-batch-selected';
+const EXTERNAL_SECTION_TOGGLE_ATTR = 'data-dpp-external-toggle';
 const PROJECT_LIMIT = 5;
 const EMPTY_HISTORY_STATE = createEmptyHistoryOrganizerState();
 const NATIVE_MENU_TEXT = {
@@ -66,6 +92,8 @@ type ProjectSectionHandlers = Pick<
   Parameters<typeof renderProjectSidebar>[1],
   'onMoveCurrent' | 'onNewProjectConversation' | 'onTogglePending' | 'onToggleProject' | 'onToggleShowAll'
   | 'onOpenProjectConversation' | 'onOpenProjectConversationMenu' | 'onRemoveConversationFromProject'
+  | 'onToggleBatchMode' | 'onBatchSelectAll' | 'onBatchSelectExternal' | 'onStartBatchDelete'
+  | 'onConfirmBatchDelete' | 'onCancelBatchDelete' | 'onToggleExternalSection' | 'onRemoveExternalSession'
 >;
 
 interface BoundProjectSection extends HTMLElement {
@@ -97,6 +125,12 @@ export function startDeepSeekProjectSidebarOrganizer(
   let cachedHistoryItems: readonly HistoryItem[] = [];
   const expandedProjectIds = new Set<string>();
   const showAllProjectIds = new Set<string>();
+  let externalSessions: ExternalApiSessionMeta[] = [];
+  let expandedExternalSection = true;
+  let batchMode = false;
+  let batchConfirming = false;
+  let batchDeleting = false;
+  const selectedSessionIds = new Set<string>();
 
   injectProjectSidebarStyles();
 
@@ -104,6 +138,16 @@ export function startDeepSeekProjectSidebarOrganizer(
     try {
       const response = await chrome.runtime.sendMessage({ type: 'GET_PROJECT_CONTEXT_STATE' });
       applyState(decodeProjectContextState(response, 'projectSidebarState'));
+      if (typeof chrome !== 'undefined' && chrome.storage?.local?.get) {
+        chrome.storage.local.get(EXTERNAL_API_SESSIONS_STORAGE_KEY).then((storageData) => {
+          const rawExternal = (storageData as Record<string, unknown>)?.[EXTERNAL_API_SESSIONS_STORAGE_KEY];
+          const nextExternal = Array.isArray(rawExternal) ? (rawExternal as ExternalApiSessionMeta[]) : [];
+          if (nextExternal.length > 0 || externalSessions.length > 0) {
+            externalSessions = nextExternal;
+            schedule();
+          }
+        }).catch(() => {});
+      }
     } catch (error) {
       statusMessage = getLabels().operationFailed(getErrorMessage(error));
       console.error('DeepSeek++ failed to load project sidebar state', error);
@@ -122,6 +166,14 @@ export function startDeepSeekProjectSidebarOrganizer(
     schedule();
   };
 
+  const storageChangeListener = (changes: { [key: string]: chrome.storage.StorageChange }) => {
+    if (changes[EXTERNAL_API_SESSIONS_STORAGE_KEY]) {
+      const raw = changes[EXTERNAL_API_SESSIONS_STORAGE_KEY].newValue;
+      externalSessions = Array.isArray(raw) ? (raw as ExternalApiSessionMeta[]) : [];
+      schedule();
+    }
+  };
+
   const schedule = () => {
     if (stopped || timer || rendering) return;
     timer = setTimeout(() => {
@@ -132,6 +184,12 @@ export function startDeepSeekProjectSidebarOrganizer(
         renderProjectSidebar(document, {
           historyItems: cachedHistoryItems,
           state,
+          externalSessions,
+          expandedExternalSection,
+          batchMode,
+          batchConfirming,
+          batchDeleting,
+          selectedSessionIds,
           labels: getLabels(),
           statusMessage,
           expandedProjectIds,
@@ -152,6 +210,10 @@ export function startDeepSeekProjectSidebarOrganizer(
             }
             schedule();
           },
+          onToggleExternalSection() {
+            expandedExternalSection = !expandedExternalSection;
+            schedule();
+          },
           onOpenProjectConversation(conversationId, href) {
             openProjectConversation(conversationId, href, cachedHistoryItems);
           },
@@ -166,6 +228,14 @@ export function startDeepSeekProjectSidebarOrganizer(
                 payload: { conversationId },
               }));
               projectConversationMenu = null;
+            });
+          },
+          onRemoveExternalSession(sessionId) {
+            void mutateProjectSidebarState(async () => {
+              assertRuntimeSuccess(await chrome.runtime.sendMessage({
+                type: 'DELETE_DEEPSEEK_SESSIONS',
+                payload: { sessionIds: [sessionId] },
+              }));
             });
           },
           onMoveCurrent(projectId) {
@@ -204,6 +274,102 @@ export function startDeepSeekProjectSidebarOrganizer(
               }));
               window.location.assign(new URL('/a/chat/new', location.origin).href);
             });
+          },
+          onToggleBatchMode() {
+            batchMode = !batchMode;
+            batchConfirming = false;
+            batchDeleting = false;
+            selectedSessionIds.clear();
+            schedule();
+          },
+          onToggleBatchSelect(sessionId) {
+            if (selectedSessionIds.has(sessionId)) {
+              selectedSessionIds.delete(sessionId);
+            } else {
+              selectedSessionIds.add(sessionId);
+            }
+            schedule();
+          },
+          onBatchSelectAll() {
+            const allVisibleIds = cachedHistoryItems
+              .filter((item) => item.element.getAttribute(PROJECT_HIDDEN_ATTR) !== 'true')
+              .map((item) => item.sessionId);
+            const allExternalIds = externalSessions.map((s) => s.chatSessionId);
+            const combined = new Set([...allVisibleIds, ...allExternalIds]);
+            if (selectedSessionIds.size >= combined.size && combined.size > 0) {
+              selectedSessionIds.clear();
+            } else {
+              for (const id of combined) selectedSessionIds.add(id);
+            }
+            schedule();
+          },
+          onBatchSelectExternal() {
+            selectedSessionIds.clear();
+            for (const s of externalSessions) selectedSessionIds.add(s.chatSessionId);
+            schedule();
+          },
+          onStartBatchDelete() {
+            if (selectedSessionIds.size === 0) return;
+            batchConfirming = true;
+            schedule();
+          },
+          onCancelBatchDelete() {
+            batchConfirming = false;
+            schedule();
+          },
+          onConfirmBatchDelete() {
+            if (selectedSessionIds.size === 0) return;
+            batchDeleting = true;
+            schedule();
+            void (async () => {
+              try {
+                const idsToDelete = Array.from(selectedSessionIds);
+                const currentSessionId = parseSessionId(location.href);
+                const isCurrentDeleted = currentSessionId && idsToDelete.includes(currentSessionId);
+
+                const res = await chrome.runtime.sendMessage({
+                  type: 'DELETE_DEEPSEEK_SESSIONS',
+                  payload: { sessionIds: idsToDelete },
+                });
+                assertRuntimeSuccess(res);
+
+                for (const id of idsToDelete) {
+                  // Direct DOM cleanup for native sidebar conversation items
+                  document.querySelectorAll(`a[href*="/a/chat/s/${id}"], a[href*="/a/chat/s/${encodeURIComponent(id)}"]`).forEach((el) => {
+                    const rowContainer = el.closest('[class*="item"], [class*="row"], [class*="session"], li') || el;
+                    rowContainer.remove();
+                  });
+                  const item = cachedHistoryItems.find((candidate) => candidate.sessionId === id);
+                  if (item) {
+                    item.element.remove();
+                  }
+                }
+
+                cachedHistoryItems = cachedHistoryItems.filter(
+                  (item) => !idsToDelete.includes(item.sessionId),
+                );
+                externalSessions = externalSessions.filter(
+                  (s) => !idsToDelete.includes(s.chatSessionId),
+                );
+
+                selectedSessionIds.clear();
+                batchConfirming = false;
+                batchDeleting = false;
+                batchMode = false;
+
+                if (isCurrentDeleted) {
+                  window.location.assign(new URL('/a/chat/new', location.origin).href);
+                  return;
+                }
+
+                await loadState();
+                schedule();
+              } catch (error) {
+                statusMessage = getLabels().operationFailed(getErrorMessage(error));
+                batchDeleting = false;
+                schedule();
+              }
+            })();
           },
           nativeMenuConversation,
           activeProjectConversationMenu: projectConversationMenu,
@@ -282,6 +448,22 @@ export function startDeepSeekProjectSidebarOrganizer(
   const clickCaptureHandler = (event: MouseEvent) => {
     const target = event.target;
     if (!(target instanceof Node)) return;
+
+    if (batchMode) {
+      const row = findHistoryConversationForNode(target, cachedHistoryItems);
+      if (row && target instanceof Element && !target.closest(`#${PROJECT_SECTION_ID}`)) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (selectedSessionIds.has(row.conversationId)) {
+          selectedSessionIds.delete(row.conversationId);
+        } else {
+          selectedSessionIds.add(row.conversationId);
+        }
+        schedule();
+        return;
+      }
+    }
+
     if (target instanceof Element && target.closest(`#${PROJECT_SECTION_ID}`)) return;
     const conversation = findHistoryConversationForNode(target, cachedHistoryItems);
     if (conversation) {
@@ -309,6 +491,13 @@ export function startDeepSeekProjectSidebarOrganizer(
   });
   observer.observe(document.body, { childList: true, subtree: true });
   chrome.runtime.onMessage.addListener(messageHandler);
+  try {
+    if (typeof chrome !== 'undefined' && chrome.storage?.onChanged?.addListener) {
+      chrome.storage.onChanged.addListener(storageChangeListener);
+    }
+  } catch {
+    // ignore in tests without storage.onChanged
+  }
   document.addEventListener('click', clickCaptureHandler, true);
   window.addEventListener('dpp:navigation', navigationHandler);
   schedule();
@@ -327,12 +516,20 @@ export function startDeepSeekProjectSidebarOrganizer(
         // pagehide cleanup runs; that listener is already gone in that case.
         if (!isExtensionContextInvalidatedError(error)) throw error;
       }
+      try {
+        if (typeof chrome !== 'undefined' && chrome.storage?.onChanged?.removeListener) {
+          chrome.storage.onChanged.removeListener(storageChangeListener);
+        }
+      } catch {
+        // ignore
+      }
       document.removeEventListener('click', clickCaptureHandler, true);
       window.removeEventListener('dpp:navigation', navigationHandler);
       if (timer) clearTimeout(timer);
       document.getElementById(PROJECT_SECTION_ID)?.remove();
       document.getElementById(PROJECT_STYLE_ID)?.remove();
       removeNativeMenuEnhancements(document);
+      removeBatchIndicators(document);
       restoreProjectHiddenRows(document);
     },
   };
@@ -352,7 +549,10 @@ function isProjectSidebarSyntheticNode(node: Node): boolean {
     node.closest(`#${PROJECT_SECTION_ID}`) ||
     node.id === PROJECT_SECTION_ID ||
     node.closest(`[${NATIVE_MENU_ENHANCER_ATTR}="true"]`) ||
-    node.getAttribute(NATIVE_MENU_ENHANCER_ATTR) === 'true',
+    node.getAttribute(NATIVE_MENU_ENHANCER_ATTR) === 'true' ||
+    node.closest(`.${BATCH_INDICATOR_CLASS}`) ||
+    node.classList.contains(BATCH_INDICATOR_CLASS) ||
+    node.hasAttribute(BATCH_SELECTED_ATTR),
   );
 }
 
@@ -364,14 +564,29 @@ export function renderProjectSidebar(
     statusMessage: string;
     expandedProjectIds: ReadonlySet<string>;
     showAllProjectIds: ReadonlySet<string>;
+    externalSessions?: readonly ExternalApiSessionMeta[];
+    expandedExternalSection?: boolean;
+    batchMode?: boolean;
+    batchConfirming?: boolean;
+    batchDeleting?: boolean;
+    selectedSessionIds?: ReadonlySet<string>;
     onToggleProject(projectId: string): void;
     onToggleShowAll(projectId: string): void;
+    onToggleExternalSection?(): void;
     onOpenProjectConversation(conversationId: string, href: string): void;
     onOpenProjectConversationMenu(menu: ProjectConversationMenuState): void;
     onRemoveConversationFromProject(conversationId: string): void;
+    onRemoveExternalSession?(sessionId: string): void;
     onMoveCurrent(projectId: string): void;
     onNewProjectConversation(projectId: string): void;
     onTogglePending(projectId: string): void;
+    onToggleBatchMode?(): void;
+    onToggleBatchSelect?(sessionId: string): void;
+    onBatchSelectAll?(): void;
+    onBatchSelectExternal?(): void;
+    onStartBatchDelete?(): void;
+    onConfirmBatchDelete?(): void;
+    onCancelBatchDelete?(): void;
     nativeMenuConversation?: NativeMenuConversation | null;
     activeProjectConversationMenu?: ProjectConversationMenuState | null;
     onNativeJoinProject?(projectId: string): void;
@@ -385,13 +600,21 @@ export function renderProjectSidebar(
 
   if (!mount) {
     getElementById(root, PROJECT_SECTION_ID)?.remove();
+    removeBatchIndicators(root);
     return null;
   }
 
   const section = ensureProjectSection(root, mount);
   renderProjectSection(section, historyItems, options);
-  hideProjectHistoryRows(historyItems, options.state?.conversations ?? []);
+  hideProjectHistoryRows(historyItems, options.state?.conversations ?? [], options.externalSessions ?? []);
   renderNativeMenuEnhancements(root, options);
+
+  if (options.batchMode) {
+    attachBatchIndicators(root, historyItems, options.selectedSessionIds ?? new Set());
+  } else {
+    removeBatchIndicators(root);
+  }
+
   return section;
 }
 
@@ -400,7 +623,7 @@ function renderProjectSection(
   historyItems: readonly HistoryItem[],
   options: Parameters<typeof renderProjectSidebar>[1],
 ): void {
-  const { state, labels } = options;
+  const { state, labels, externalSessions = [] } = options;
   const currentConversation = getCurrentConversation(labels, historyItems);
   const currentMembership = currentConversation && state
     ? state.conversations.find((item) => item.conversationId === currentConversation.conversationId) ?? null
@@ -408,14 +631,53 @@ function renderProjectSection(
 
   section.replaceChildren();
   section.dataset.dppHistorySynthetic = 'true';
-  section.appendChild(createSectionHeader(labels.title));
+
+  const headerRow = document.createElement('div');
+  headerRow.className = 'dpp-project-sidebar__header-row';
+  headerRow.appendChild(createSectionHeader(labels.title));
+  if (options.onToggleBatchMode) {
+    const batchBtn = document.createElement('button');
+    batchBtn.type = 'button';
+    batchBtn.className = 'dpp-project-sidebar__batch-toggle-btn';
+    batchBtn.dataset.dppBatchToggle = 'true';
+    batchBtn.title = options.batchMode ? (labels.exitBatchManage ?? 'Exit Batch') : (labels.batchManage ?? 'Batch Manage');
+    batchBtn.textContent = options.batchMode ? (labels.exitBatchManage ?? '\u2715 Exit') : (labels.batchManage ?? '\u2611 Batch');
+    headerRow.appendChild(batchBtn);
+  }
+  section.appendChild(headerRow);
 
   if (options.statusMessage) {
     section.appendChild(createStatus(options.statusMessage));
   }
 
+  if (options.batchMode) {
+    section.appendChild(createBatchToolbar({
+      selectedCount: options.selectedSessionIds?.size ?? 0,
+      externalCount: externalSessions.length,
+      isAllSelected: (options.selectedSessionIds?.size ?? 0) > 0 &&
+        (options.selectedSessionIds?.size ?? 0) >= (historyItems.length + externalSessions.length),
+      confirming: Boolean(options.batchConfirming),
+      deleting: Boolean(options.batchDeleting),
+      labels,
+    }));
+  }
+
+  if (externalSessions.length > 0) {
+    section.appendChild(createExternalApiFolder(
+      externalSessions,
+      Boolean(options.expandedExternalSection),
+      labels,
+      currentConversation?.conversationId ?? null,
+      options.batchMode,
+      options.selectedSessionIds ?? new Set(),
+      historyItems,
+    ));
+  }
+
   if (!state || state.projects.length === 0) {
-    section.appendChild(createEmpty(labels.empty));
+    if (externalSessions.length === 0) {
+      section.appendChild(createEmpty(labels.empty));
+    }
     bindProjectSection(section, options);
     return;
   }
@@ -505,6 +767,217 @@ function renderProjectSection(
   bindProjectSection(section, options);
 }
 
+function createBatchToolbar(options: {
+  selectedCount: number;
+  externalCount: number;
+  isAllSelected: boolean;
+  confirming: boolean;
+  deleting: boolean;
+  labels: ProjectSidebarOrganizerLabels;
+}): HTMLElement {
+  const { labels } = options;
+  const toolbar = document.createElement('div');
+  toolbar.className = 'dpp-batch-toolbar';
+  toolbar.dataset.dppHistorySynthetic = 'true';
+
+  if (options.confirming) {
+    const confirmTitle = labels.batchConfirmDelete
+      ? labels.batchConfirmDelete(options.selectedCount)
+      : `Delete selected ${options.selectedCount} conversations?`;
+    const confirmSub = labels.batchConfirmSub ?? 'This will permanently remove conversation records.';
+    const deletingText = labels.batchDeleting ?? 'Deleting...';
+    const confirmDeleteText = labels.confirmDelete ?? 'Confirm Delete';
+    const cancelText = labels.cancel ?? 'Cancel';
+
+    toolbar.innerHTML = `
+      <div class="dpp-batch-confirm-box">
+        <div class="dpp-batch-confirm-text">${escapeHtml(confirmTitle)}<br><span class="dpp-batch-confirm-sub">${escapeHtml(confirmSub)}</span></div>
+        <div class="dpp-batch-confirm-actions">
+          <button type="button" class="dpp-batch-btn dpp-batch-btn--danger" data-batch-action="confirm-delete" ${options.deleting ? 'disabled' : ''}>
+            ${escapeHtml(options.deleting ? deletingText : confirmDeleteText)}
+          </button>
+          <button type="button" class="dpp-batch-btn" data-batch-action="cancel-confirm" ${options.deleting ? 'disabled' : ''}>${escapeHtml(cancelText)}</button>
+        </div>
+      </div>
+    `;
+  } else {
+    const countText = labels.selectedCount
+      ? labels.selectedCount(options.selectedCount)
+      : `Selected ${options.selectedCount}`;
+    const batchDeleteText = labels.batchDelete ?? 'Batch Delete';
+    const selectAllText = options.isAllSelected
+      ? (labels.unselectAll ?? 'Unselect All')
+      : (labels.selectAll ?? 'Select All');
+    const selectExternalText = labels.selectExternal
+      ? labels.selectExternal(options.externalCount)
+      : `External (${options.externalCount})`;
+
+    toolbar.innerHTML = `
+      <div class="dpp-batch-toolbar-top">
+        <span class="dpp-batch-count">${escapeHtml(countText)}</span>
+        <button type="button" class="dpp-batch-btn dpp-batch-btn--danger" data-batch-action="start-delete" ${options.selectedCount === 0 ? 'disabled' : ''}>
+          ${escapeHtml(batchDeleteText)}
+        </button>
+      </div>
+      <div class="dpp-batch-toolbar-bottom">
+        <button type="button" class="dpp-batch-btn dpp-batch-btn--small" data-batch-action="toggle-all">
+          ${escapeHtml(selectAllText)}
+        </button>
+        ${options.externalCount > 0 ? `
+          <button type="button" class="dpp-batch-btn dpp-batch-btn--small" data-batch-action="select-external">
+            ${escapeHtml(selectExternalText)}
+          </button>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  return toolbar;
+}
+
+function createExternalApiFolder(
+  externalSessions: readonly ExternalApiSessionMeta[],
+  expanded: boolean,
+  labels: ProjectSidebarOrganizerLabels,
+  activeSessionId: string | null,
+  batchMode?: boolean,
+  selectedSessionIds?: ReadonlySet<string>,
+  historyItems: readonly HistoryItem[] = [],
+): HTMLElement {
+  const block = document.createElement('div');
+  block.className = 'dpp-project-sidebar__project dpp-project-sidebar__external-block';
+
+  const row = document.createElement('div');
+  row.className = 'dpp-project-sidebar__project-row';
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'dpp-project-sidebar__project-toggle';
+  toggle.setAttribute(EXTERNAL_SECTION_TOGGLE_ATTR, 'true');
+  toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  toggle.title = expanded
+    ? (labels.collapseExternalApi ?? 'Collapse External API')
+    : (labels.expandExternalApi ?? 'Expand External API');
+  toggle.innerHTML = `
+    ${terminalApiIcon()}
+    <span class="dpp-project-sidebar__project-name">${escapeHtml(labels.externalApiTitle ?? 'External API')}</span>
+    <span class="dpp-project-sidebar__project-count">${externalSessions.length}</span>
+  `;
+  row.appendChild(toggle);
+  block.appendChild(row);
+
+  if (expanded) {
+    const list = document.createElement('div');
+    list.className = 'dpp-project-sidebar__conversation-list';
+    if (externalSessions.length === 0) {
+      const emptyRow = document.createElement('div');
+      emptyRow.className = 'dpp-project-sidebar__empty-hint';
+      emptyRow.textContent = labels.noExternalSessions ?? 'No external sessions yet';
+      list.appendChild(emptyRow);
+    } else {
+      for (const session of externalSessions) {
+        const historyTitle = historyItems.find((item) => item.sessionId === session.chatSessionId)?.title;
+        list.appendChild(
+          createExternalSessionRow(
+            session,
+            labels,
+            activeSessionId,
+            batchMode,
+            selectedSessionIds?.has(session.chatSessionId),
+            historyTitle,
+          ),
+        );
+      }
+    }
+    block.appendChild(list);
+  }
+
+  return block;
+}
+
+function createExternalSessionRow(
+  session: ExternalApiSessionMeta,
+  labels: ProjectSidebarOrganizerLabels,
+  activeSessionId: string | null,
+  batchMode?: boolean,
+  isSelected?: boolean,
+  historyTitle?: string,
+): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'dpp-project-sidebar__conversation-row';
+  if (activeSessionId === session.chatSessionId) {
+    row.dataset.active = 'true';
+  }
+  if (batchMode && isSelected) {
+    row.setAttribute(BATCH_SELECTED_ATTR, 'true');
+  }
+
+  if (batchMode) {
+    const indicator = document.createElement('div');
+    indicator.className = BATCH_INDICATOR_CLASS;
+    indicator.dataset.checked = isSelected ? 'true' : 'false';
+    indicator.innerHTML = isSelected ? checkmarkIcon() : '';
+    row.appendChild(indicator);
+  }
+
+  const link = document.createElement('a');
+  link.className = 'dpp-project-sidebar__conversation';
+  link.href = `/a/chat/s/${encodeURIComponent(session.chatSessionId)}`;
+  link.dataset.dppProjectConversationId = session.chatSessionId;
+
+  const isDefaultPost = session.sessionKey === DEFAULT_EXTERNAL_API_SESSION_KEY;
+  const testBadgeText = labels.testBadge ?? 'Test';
+  const resolvedTitle = session.title || historyTitle;
+  const titleText = resolvedTitle || (isDefaultPost ? DEFAULT_EXTERNAL_API_SESSION_KEY : session.sessionKey);
+
+  link.innerHTML = `
+    <span class="dpp-project-sidebar__conversation-title">
+      ${isDefaultPost ? `<span class="dpp-project-sidebar__badge">${escapeHtml(testBadgeText)}</span> ` : ''}${escapeHtml(titleText)}
+    </span>
+    <span class="dpp-project-sidebar__conversation-age">${escapeHtml(labels.age(session.lastUsedAt || session.createdAt))}</span>
+  `;
+  row.appendChild(link);
+
+  if (!batchMode) {
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'dpp-project-sidebar__conversation-menu-button';
+    removeBtn.dataset.dppRemoveExternalSession = session.chatSessionId;
+    removeBtn.title = labels.deleteExternalSession ?? 'Delete external session';
+    removeBtn.innerHTML = trashIcon();
+    row.appendChild(removeBtn);
+  }
+
+  return row;
+}
+
+function attachBatchIndicators(
+  root: ParentNode,
+  historyItems: readonly HistoryItem[],
+  selectedSessionIds: ReadonlySet<string>,
+): void {
+  for (const item of historyItems) {
+    if (item.element.getAttribute(PROJECT_HIDDEN_ATTR) === 'true') continue;
+    const isSelected = selectedSessionIds.has(item.sessionId);
+    item.element.setAttribute(BATCH_SELECTED_ATTR, isSelected ? 'true' : 'false');
+    let indicator = item.element.querySelector<HTMLElement>(`.${BATCH_INDICATOR_CLASS}`);
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.className = BATCH_INDICATOR_CLASS;
+      item.element.prepend(indicator);
+    }
+    indicator.dataset.checked = isSelected ? 'true' : 'false';
+    indicator.innerHTML = isSelected ? checkmarkIcon() : '';
+  }
+}
+
+function removeBatchIndicators(root: ParentNode): void {
+  root.querySelectorAll(`.${BATCH_INDICATOR_CLASS}`).forEach((el) => el.remove());
+  root.querySelectorAll(`[${BATCH_SELECTED_ATTR}]`).forEach((el) => {
+    el.removeAttribute(BATCH_SELECTED_ATTR);
+  });
+}
+
 function bindProjectSection(
   section: HTMLElement,
   options: ProjectSectionHandlers,
@@ -518,6 +991,43 @@ function bindProjectSection(
     if (!handlers) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
+
+    const batchToggle = target.closest<HTMLButtonElement>('[data-dpp-batch-toggle]');
+    if (batchToggle) {
+      event.preventDefault();
+      event.stopPropagation();
+      handlers.onToggleBatchMode?.();
+      return;
+    }
+
+    const batchAction = target.closest<HTMLButtonElement>('[data-batch-action]');
+    if (batchAction) {
+      event.preventDefault();
+      event.stopPropagation();
+      const action = batchAction.dataset.batchAction;
+      if (action === 'toggle-all') handlers.onBatchSelectAll?.();
+      else if (action === 'select-external') handlers.onBatchSelectExternal?.();
+      else if (action === 'start-delete') handlers.onStartBatchDelete?.();
+      else if (action === 'confirm-delete') handlers.onConfirmBatchDelete?.();
+      else if (action === 'cancel-confirm') handlers.onCancelBatchDelete?.();
+      return;
+    }
+
+    const externalToggle = target.closest<HTMLButtonElement>(`[${EXTERNAL_SECTION_TOGGLE_ATTR}]`);
+    if (externalToggle) {
+      event.preventDefault();
+      event.stopPropagation();
+      handlers.onToggleExternalSection?.();
+      return;
+    }
+
+    const removeExternal = target.closest<HTMLButtonElement>('[data-dpp-remove-external-session]');
+    if (removeExternal?.dataset.dppRemoveExternalSession) {
+      event.preventDefault();
+      event.stopPropagation();
+      handlers.onRemoveExternalSession?.(removeExternal.dataset.dppRemoveExternalSession);
+      return;
+    }
 
     const conversationLink = target.closest<HTMLAnchorElement>('a[data-dpp-project-conversation-id]');
     if (conversationLink?.dataset.dppProjectConversationId && shouldOpenProjectConversationFromEvent(event)) {
@@ -579,12 +1089,13 @@ function bindProjectSection(
   section.addEventListener('pointerdown', (event) => {
     const target = event.target;
     if (!(target instanceof Element)) return;
-    if (!target.closest('button') && !target.closest('a[data-dpp-project-conversation-id]')) return;
-    boundSection.__dppProjectSidebarPointerHandled = true;
-    handleProjectSectionAction(event);
-    setTimeout(() => {
-      boundSection.__dppProjectSidebarPointerHandled = false;
-    }, 0);
+    if (target.closest('[data-dpp-project-conversation-menu], [data-dpp-project-action], [data-dpp-project-toggle], [data-dpp-project-remove-conversation]')) {
+      boundSection.__dppProjectSidebarPointerHandled = true;
+      handleProjectSectionAction(event);
+      setTimeout(() => {
+        boundSection.__dppProjectSidebarPointerHandled = false;
+      }, 0);
+    }
   }, true);
 
   section.addEventListener('click', (event) => {
@@ -594,7 +1105,7 @@ function bindProjectSection(
       return;
     }
     handleProjectSectionAction(event);
-  });
+  }, true);
 }
 
 function ensureProjectSection(
@@ -655,13 +1166,19 @@ function isCompactHistoryLabel(element: HTMLElement): boolean {
   return text.length > 0 && text.length <= 24;
 }
 
-function hideProjectHistoryRows(historyItems: readonly HistoryItem[], conversations: readonly ProjectConversation[]): void {
+function hideProjectHistoryRows(
+  historyItems: readonly HistoryItem[],
+  conversations: readonly ProjectConversation[],
+  externalSessions: readonly ExternalApiSessionMeta[] = [],
+): void {
   const projectSessionIds = new Set(conversations.map((conversation) => conversation.conversationId));
+  const externalSessionIds = new Set(externalSessions.map((session) => session.chatSessionId));
   for (const item of historyItems) {
-    if (!projectSessionIds.has(item.sessionId)) continue;
-    item.element.setAttribute(PROJECT_HIDDEN_ATTR, 'true');
-    item.element.hidden = true;
-    item.element.style.setProperty('display', 'none', 'important');
+    if (projectSessionIds.has(item.sessionId) || externalSessionIds.has(item.sessionId)) {
+      item.element.setAttribute(PROJECT_HIDDEN_ATTR, 'true');
+      item.element.hidden = true;
+      item.element.style.setProperty('display', 'none', 'important');
+    }
   }
 }
 
@@ -1100,6 +1617,18 @@ function moreIcon(): string {
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg>';
 }
 
+function terminalApiIcon(): string {
+  return '<svg class="dpp-project-sidebar__icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l6-6-6-6M12 19h8"/></svg>';
+}
+
+function trashIcon(): string {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+}
+
+function checkmarkIcon(): string {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>';
+}
+
 function injectProjectSidebarStyles(): void {
   injectInjectedThemeStyles();
   if (document.getElementById(PROJECT_STYLE_ID)) return;
@@ -1108,21 +1637,39 @@ function injectProjectSidebarStyles(): void {
   style.textContent = `
     #${PROJECT_SECTION_ID} {
       --dpp-project-accent: var(--dpp-ui-accent, oklch(0.62 0.19 264));
-      --dpp-project-line: color-mix(in srgb, var(--dpp-ui-text, currentColor) 13%, transparent);
-      --dpp-project-soft: color-mix(in srgb, var(--dpp-ui-text, currentColor) 6%, transparent);
-      --dpp-project-soft-hover: color-mix(in srgb, var(--dpp-ui-text, currentColor) 9%, transparent);
-      --dpp-project-active: var(--dpp-ui-accent-panel, color-mix(in srgb, var(--dpp-project-accent) 10%, transparent));
-      --dpp-project-muted: var(--dpp-ui-text-muted, color-mix(in srgb, currentColor 54%, transparent));
+      --dpp-project-line: rgba(0, 0, 0, 0.1);
+      --dpp-project-soft: rgba(0, 0, 0, 0.04);
+      --dpp-project-soft-hover: rgba(0, 0, 0, 0.08);
+      --dpp-project-active: rgba(59, 130, 246, 0.12);
+      --dpp-project-text: #1e293b;
+      --dpp-project-muted: #475569;
       box-sizing: border-box;
       display: grid;
       gap: 4px;
       margin: 12px 0 10px;
       padding: 0 14px;
-      color: var(--dpp-ui-text, inherit);
+      color: var(--dpp-project-text);
       font: 14px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif;
+    }
+    html.dark #${PROJECT_SECTION_ID},
+    html.dpp-theme-dark #${PROJECT_SECTION_ID},
+    [data-dpp-theme="dark"] #${PROJECT_SECTION_ID},
+    [data-theme="dark"] #${PROJECT_SECTION_ID} {
+      --dpp-project-line: rgba(255, 255, 255, 0.12);
+      --dpp-project-soft: rgba(255, 255, 255, 0.05);
+      --dpp-project-soft-hover: rgba(255, 255, 255, 0.09);
+      --dpp-project-active: rgba(59, 130, 246, 0.2);
+      --dpp-project-text: #f1f5f9;
+      --dpp-project-muted: #94a3b8;
     }
     #${PROJECT_SECTION_ID} * {
       box-sizing: border-box;
+    }
+    #${PROJECT_SECTION_ID} .dpp-project-sidebar__header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
     }
     #${PROJECT_SECTION_ID} .dpp-project-sidebar__section-title {
       padding: 8px 0 5px;
@@ -1130,6 +1677,97 @@ function injectProjectSidebarStyles(): void {
       font-size: 12px;
       font-weight: 560;
       letter-spacing: 0;
+    }
+    #${PROJECT_SECTION_ID} .dpp-project-sidebar__batch-toggle-btn {
+      padding: 2px 8px;
+      border: 1px solid var(--dpp-project-line);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--dpp-project-muted);
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 120ms ease;
+    }
+    #${PROJECT_SECTION_ID} .dpp-project-sidebar__batch-toggle-btn:hover {
+      background: var(--dpp-project-soft-hover);
+      color: var(--dpp-project-accent);
+      border-color: var(--dpp-project-accent);
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-toolbar {
+      display: grid;
+      gap: 6px;
+      padding: 8px;
+      border: 1px solid var(--dpp-project-line);
+      border-radius: 8px;
+      background: var(--dpp-project-soft);
+      margin-bottom: 4px;
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-toolbar-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-count {
+      font-size: 12px;
+      color: inherit;
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-toolbar-bottom {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-btn {
+      padding: 4px 8px;
+      border: 1px solid var(--dpp-project-line);
+      border-radius: 6px;
+      background: color-mix(in srgb, canvas 90%, currentColor 10%);
+      color: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 120ms ease;
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-btn:hover:not(:disabled) {
+      background: var(--dpp-project-soft-hover);
+      border-color: var(--dpp-project-accent);
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-btn--danger {
+      background: color-mix(in srgb, #ef4444 15%, transparent);
+      color: #ef4444;
+      border-color: color-mix(in srgb, #ef4444 30%, transparent);
+      font-weight: 560;
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-btn--danger:hover:not(:disabled) {
+      background: #ef4444;
+      color: #ffffff;
+      border-color: #ef4444;
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-btn--small {
+      font-size: 11px;
+      padding: 2px 6px;
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-confirm-box {
+      display: grid;
+      gap: 6px;
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-confirm-text {
+      font-size: 12px;
+      line-height: 1.4;
+      color: #ef4444;
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-confirm-sub {
+      font-size: 11px;
+      opacity: 0.85;
+      color: var(--dpp-project-muted);
+    }
+    #${PROJECT_SECTION_ID} .dpp-batch-confirm-actions {
+      display: flex;
+      gap: 6px;
     }
     #${PROJECT_SECTION_ID} .dpp-project-sidebar__project {
       display: grid;
@@ -1191,6 +1829,17 @@ function injectProjectSidebarStyles(): void {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    #${PROJECT_SECTION_ID} .dpp-project-sidebar__badge {
+      display: inline-block;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 560;
+      color: #3b82f6;
+      background: rgba(59, 130, 246, 0.12);
+      margin-right: 4px;
+      vertical-align: middle;
     }
     #${PROJECT_SECTION_ID} .dpp-project-sidebar__project-count {
       color: var(--dpp-project-muted);
@@ -1354,12 +2003,45 @@ function injectProjectSidebarStyles(): void {
       color: inherit;
     }
     #${PROJECT_SECTION_ID} .dpp-project-sidebar__empty,
+    #${PROJECT_SECTION_ID} .dpp-project-sidebar__empty-hint,
     #${PROJECT_SECTION_ID} .dpp-project-sidebar__status {
       padding: 8px;
       border-radius: 8px;
       background: var(--dpp-project-soft);
       color: var(--dpp-project-muted);
       font-size: 12px;
+    }
+    .${BATCH_INDICATOR_CLASS} {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      height: 18px;
+      min-width: 18px;
+      margin-right: 6px;
+      border: 1.5px solid var(--dpp-project-muted, #888);
+      border-radius: 4px;
+      background: transparent;
+      cursor: pointer;
+      transition: all 120ms ease;
+    }
+    .${BATCH_INDICATOR_CLASS}[data-checked="true"] {
+      background: var(--dpp-project-accent, #3b82f6);
+      border-color: var(--dpp-project-accent, #3b82f6);
+      color: #ffffff;
+    }
+    .${BATCH_INDICATOR_CLASS} svg {
+      width: 14px;
+      height: 14px;
+      fill: none;
+      stroke: #ffffff;
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    [${BATCH_SELECTED_ATTR}="true"] {
+      background: color-mix(in srgb, var(--dpp-project-accent, #3b82f6) 12%, transparent) !important;
+      border-radius: 6px;
     }
     .dpp-project-native-menu {
       display: grid;

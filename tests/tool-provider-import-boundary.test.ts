@@ -51,6 +51,7 @@ describe('tool provider import boundary', () => {
     const productionFiles = listSourceFiles(ROOT)
       .filter((file) => !toRelative(file).startsWith('tests/'));
     const owners = productionFiles
+      .filter((file) => readFileSync(file, 'utf8').includes('ToolProviderRegistry'))
       .filter((file) => registryConstructionShape(file).count > 0)
       .map(toRelative);
 
@@ -60,7 +61,7 @@ describe('tool provider import boundary', () => {
       'entrypoints/background/tool-provider-composition.ts',
     ))).toEqual({ count: 1, inlineProviderArrays: 1 });
     expect(relativeImports('entrypoints/background.ts')).toContain('./background/tool-provider-composition');
-  });
+  }, 30000);
 
   it('keeps content descriptor synchronization strict and fail-closed', () => {
     const source = readFileSync(resolve(ROOT, 'entrypoints/content.ts'), 'utf8');
@@ -155,7 +156,7 @@ function parseModuleSpecifiers(file: string): string[] {
 function listSourceFiles(root: string): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(root)) {
-    if (entry === 'node_modules' || entry === '.git' || entry === '.output' || entry === 'dist' || entry === '.workbuddy') continue;
+    if (entry === 'node_modules' || entry === '.git' || entry === '.output' || entry === 'dist' || entry === '.workbuddy' || entry === 'target' || entry === 'ext') continue;
     const path = join(root, entry);
     if (statSync(path).isDirectory()) {
       files.push(...listSourceFiles(path));

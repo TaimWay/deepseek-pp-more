@@ -49,6 +49,7 @@ const R43_COMMANDS = [
   'EXPORT_DEEPSEEK_CONVERSATIONS',
   'CANCEL_DEEPSEEK_EXPORT',
   'AUTH_STATUS_CHANGED',
+  'DELETE_DEEPSEEK_SESSIONS',
 ] as const;
 
 const R43_PAYLOAD_COMMANDS = [
@@ -60,6 +61,7 @@ const R43_PAYLOAD_COMMANDS = [
   'SAVE_OFFICIAL_API_CHAT_CONFIG',
   'EXPORT_DEEPSEEK_CONVERSATIONS',
   'CANCEL_DEEPSEEK_EXPORT',
+  'DELETE_DEEPSEEK_SESSIONS',
 ] as const;
 
 const extensionContext: RuntimeMessageContext = {
@@ -73,7 +75,7 @@ const extensionContext: RuntimeMessageContext = {
 };
 
 describe('R4.3 DeepSeek runtime ownership', () => {
-  it('creates exactly the assigned 16 typed handlers and eight receiving decoders', () => {
+  it('creates exactly the assigned 17 typed handlers and nine receiving decoders', () => {
     const handlers = createDeepSeekRuntimeHandlers({
       auth: createAuthDependencies(),
       multimodal: createMultimodalDependencies(),
@@ -81,13 +83,14 @@ describe('R4.3 DeepSeek runtime ownership', () => {
         service: createChatRuntimeService(createChatDependencies()),
         getOfficialApiChatConfig: vi.fn(async () => officialConfig()),
         saveOfficialApiChatConfig: vi.fn(async (config) => config),
+        deleteSessions: vi.fn(async () => ({ ok: true as const, deletedCount: 1 })),
       },
       conversationExport: createExportDependencies(),
     });
     const types = handlers.map((handler) => handler.type);
 
-    expect(types).toHaveLength(16);
-    expect(new Set(types).size).toBe(16);
+    expect(types).toHaveLength(17);
+    expect(new Set(types).size).toBe(17);
     expect([...types].sort()).toEqual([...R43_COMMANDS].sort());
     expect(Object.keys(DEEPSEEK_RUNTIME_PAYLOAD_DECODERS).sort())
       .toEqual([...R43_PAYLOAD_COMMANDS].sort());
@@ -138,6 +141,7 @@ describe('R4.3 DeepSeek runtime ownership', () => {
         service,
         getOfficialApiChatConfig: vi.fn(async () => officialConfig()),
         saveOfficialApiChatConfig: vi.fn(async (config) => config),
+        deleteSessions: vi.fn(async () => ({ ok: true as const, deletedCount: 1 })),
       },
       conversationExport: createExportDependencies(),
     });
@@ -180,6 +184,7 @@ describe('R4.3 DeepSeek runtime ownership', () => {
         service: createChatRuntimeService(chatDependencies),
         getOfficialApiChatConfig: vi.fn(async () => officialConfig()),
         saveOfficialApiChatConfig: vi.fn(async (config) => config),
+        deleteSessions: vi.fn(async () => ({ ok: true as const, deletedCount: 1 })),
       },
       conversationExport: createExportDependencies(),
     });
