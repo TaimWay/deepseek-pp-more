@@ -158,7 +158,7 @@ You MUST strictly follow the above defined tool name and parameter schemas to in
 调用工具时，只能使用与工具名一致的直接 XML 标签，并把合法 JSON 放在标签体内。
 对 MCP 工具，如果短标签名出现在可用列表中，优先使用短标签名。
 本地文件路径请使用正斜杠或转义反斜杠，确保 JSON body 合法。
-不要使用 <invoke name="...">、<tool_call>、Markdown 代码块、{"tool":"...","arguments":{...}} 或任何包装格式。
+不要使用 <invoke name="...">、<tool_call>、<tool_calls>、Markdown 代码块、{"tool":"...","arguments":{...}} 或任何包装格式。
 不要把可执行工具 XML 放在思考/reasoning 区域；必须放在最终 assistant answer content 中。
 `,
   pythonHintTitle: '### Python 快速验证能力',

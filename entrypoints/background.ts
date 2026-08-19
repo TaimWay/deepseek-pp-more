@@ -792,6 +792,13 @@ type ActionApi = {
   setBadgeBackgroundColor?: (details: { color: string }) => Promise<void> | void;
 };
 
+
+async function isAnyChatEnabled(): Promise<boolean> {
+  const floatingEnabled = await getChatEnabled();
+  const askSettings = await getAskDeepSeekSettings();
+  return floatingEnabled || askSettings.enabled;
+}
+
 export default defineBackground(() => {
   void syncLocalRecoveryBarrier.ensureReady().catch(acknowledgeReportedSyncRecoveryFailure);
   enableSidePanelActionClick();
@@ -950,7 +957,7 @@ async function refreshWhatsNewBadge() {
 }
 
 async function createContextMenus() {
-  const chatEnabled = await getChatEnabled();
+  const chatEnabled = await isAnyChatEnabled();
   if (!chatEnabled) {
     await chrome.contextMenus.removeAll();
     return;
@@ -1016,7 +1023,7 @@ function registerContextMenuClickListener(): void {
         .catch((error) => reportBackgroundStartupError('context_menu_sidepanel_open_failed', error));
     }
 
-    const chatEnabled = await getChatEnabled();
+    const chatEnabled = await isAnyChatEnabled();
     if (!chatEnabled) return;
 
     if (info.menuItemId === 'ask-deepseek-page') {
