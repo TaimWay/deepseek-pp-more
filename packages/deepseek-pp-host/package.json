@@ -1,0 +1,16 @@
+{
+  "name": "deepseek-ppmore-ext-apirelay",
+  "version": "0.1.0",
+  "description": "Chrome Native Messaging Host for DeepSeek++",
+  "main": "scripts/install.js",
+  "bin": {
+    "deepseek-ppmore-ext-apirelay": "./scripts/cli.js"
+  },
+  "scripts": {
+    "build": "cargo build --release",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["chrome", "extension", "native-messaging", "deepseek"],
+  "author": "",
+  "license": "MIT"
+}
