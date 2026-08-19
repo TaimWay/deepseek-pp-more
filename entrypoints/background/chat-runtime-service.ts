@@ -263,7 +263,11 @@ export function createChatRuntimeService(
       }
 
       const executions: ToolExecutionRecord[] = [];
-      for (const call of toolCalls) executions.push(await executeChatTool(turn, call));
+      for (const call of toolCalls) {
+        emitChunk(turn, { text: `\n\n> 正在执行操作: ${call.name}...\n\n`, done: false, phase: 'answer' }, excludeTabId);
+        executions.push(await executeChatTool(turn, call));
+      }
+
       const continuationPrompt = dependencies.continueWithToolResults(
         serializeToolExecutions(executions),
       );
