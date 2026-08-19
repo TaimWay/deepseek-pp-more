@@ -208,6 +208,13 @@ main();`;
             <div className="flex items-center gap-1.5">
               {state.relayProcessStatus.nativeHostAvailable ? (
                 <>
+                  <button
+                      onClick={() => state.refreshProcessStatus()}
+                      disabled={state.externalApiSaveStatus === 'saving'}
+                      className="ds-btn-secondary px-3 py-1.5 text-[11px] font-medium rounded-md transition-all duration-150 mr-1"
+                    >
+                      刷新状态
+                    </button>
                   {!state.relayProcessStatus.running ? (
                     <button
                       onClick={() => state.handleStartRelayProcess({
