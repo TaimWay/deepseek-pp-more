@@ -10,6 +10,7 @@ export const DEEPSEEK_ROUTE_CONTRACT = {
     powChallenge: '/api/v0/chat/create_pow_challenge',
     createSession: '/api/v0/chat_session/create',
     fetchSessions: '/api/v0/chat_session/fetch_page',
+    deleteSession: '/api/v0/chat_session/delete',
     uploadFile: '/api/v0/file/upload_file',
     fetchFiles: '/api/v0/file/fetch_files',
   },
@@ -20,6 +21,7 @@ export const LEGAL_DEEPSEEK_ROUTE_FIXTURES = [
   { route: 'editMessage', method: 'POST', url: 'https://chat.deepseek.com/api/v0/chat/edit_message' },
   { route: 'regenerate', method: 'POST', url: 'https://chat.deepseek.com/api/v0/chat/regenerate' },
   { route: 'history', method: 'GET', url: 'https://chat.deepseek.com/api/v0/chat/history_messages?chat_session_id=one' },
+  { route: 'deleteSession', method: 'POST', url: 'https://chat.deepseek.com/api/v0/chat_session/delete' },
   {
     route: 'completion',
     method: 'POST',
@@ -36,6 +38,7 @@ export const DEEPSEEK_ACTIVE_ROUTE_METHOD_FIXTURES = [
   { name: 'powChallenge', path: '/api/v0/chat/create_pow_challenge', method: 'POST' },
   { name: 'createSession', path: '/api/v0/chat_session/create', method: 'POST' },
   { name: 'fetchSessions', path: '/api/v0/chat_session/fetch_page', method: 'GET' },
+  { name: 'deleteSession', path: '/api/v0/chat_session/delete', method: 'POST' },
   { name: 'uploadFile', path: '/api/v0/file/upload_file', method: 'POST' },
   { name: 'fetchFiles', path: '/api/v0/file/fetch_files', method: 'GET' },
 ] as const;

@@ -54,6 +54,9 @@ describe('sidepanel interactions', () => {
           updatedAt: 1,
         };
       }
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -91,6 +94,9 @@ describe('sidepanel interactions', () => {
         }];
       }
       if (message.type === 'INSERT_SAVED_PROMPT_INTO_CHAT') return { ok: true };
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -123,6 +129,9 @@ describe('sidepanel interactions', () => {
       if (message.type === 'INSERT_SAVED_PROMPT_INTO_CHAT') {
         return { ok: false, error: '请先在 chat.deepseek.com 登录，或刷新 DeepSeek 页面后重试。' };
       }
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -139,6 +148,9 @@ describe('sidepanel interactions', () => {
       if (message.type === 'GET_SAVED_ITEMS') {
         return { ok: false, error: 'savedItems.schemaVersion is not supported' };
       }
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -242,6 +254,9 @@ describe('sidepanel interactions', () => {
       if (message.type === 'DELETE_SAVED_ITEM') {
         return { ok: false, error: 'delete blocked' };
       }
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -291,6 +306,9 @@ describe('sidepanel interactions', () => {
         scenarios = [message.payload.scenario];
         return { ok: false, error: 'menu offline' };
       }
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -320,6 +338,9 @@ describe('sidepanel interactions', () => {
     const sendMessage = vi.fn(async (message: { type: string; payload?: PromptInjectionSettings }) => {
       if (message.type === 'GET_PROMPT_INJECTION_SETTINGS') return DEFAULT_PROMPT_INJECTION_SETTINGS;
       if (message.type === 'SAVE_PROMPT_INJECTION_SETTINGS') return message.payload;
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -349,6 +370,9 @@ describe('sidepanel interactions', () => {
       if (message.type === 'SAVE_PROMPT_INJECTION_SETTINGS') {
         return { ok: false, error: 'tabs permission unavailable' };
       }
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -368,6 +392,9 @@ describe('sidepanel interactions', () => {
   it('explains that non-bundled local Skill resources remain available on demand', async () => {
     const legacyWarning = '13 local supporting file(s) were omitted.';
     const sendMessage = vi.fn(async (message: { type: string }) => {
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       if (message.type !== 'PREVIEW_LOCAL_SKILL_SOURCE') return null;
       return {
         source: {
@@ -476,6 +503,9 @@ describe('sidepanel interactions', () => {
           warnings: [],
         };
       }
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -557,6 +587,9 @@ describe('sidepanel interactions', () => {
           },
         };
       }
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     const onImported = vi.fn();
@@ -585,6 +618,9 @@ describe('sidepanel interactions', () => {
       if (message.type === 'GET_MODEL_TYPE') return null;
       if (message.type === 'GET_VOICE_SETTINGS') return {};
       if (message.type === 'SET_MODEL_TYPE') return { ok: true };
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -605,6 +641,9 @@ describe('sidepanel interactions', () => {
       if (message.type === 'GET_OFFICIAL_API_CHAT_CONFIG') return {};
       if (message.type === 'GET_MODEL_TYPE') return null;
       if (message.type === 'GET_VOICE_SETTINGS') return {};
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -661,6 +700,9 @@ describe('sidepanel interactions', () => {
         };
       }
       if (message.type === 'CHAT_SUBMIT_PROMPT') return { ok: true };
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -691,7 +733,7 @@ describe('sidepanel interactions', () => {
     });
     expect(container.textContent).toContain('已添加');
 
-    await enterText('给 DeepSeek++ 发送消息', '描述这张图片');
+    await enterText('给 DeepSeek++ More 发送消息', '描述这张图片');
     await clickButtonByLabel('发送');
 
     expect(sendMessage).toHaveBeenCalledWith({
@@ -717,6 +759,9 @@ describe('sidepanel interactions', () => {
         return { ok: true, file: { id: 'file-image-1', fileName: 'shot.png', status: 'SUCCESS' } };
       }
       if (message.type === 'CHAT_NEW_SESSION') return resetAck;
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -769,6 +814,9 @@ describe('trusted-directory @ file references', () => {
         return { ok: true, file: { id: 'file-image-1', fileName: 'shot.png', status: 'SUCCESS' } };
       }
       if (message.type === 'CHAT_SUBMIT_PROMPT') return { ok: true };
+      if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+      if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+      if (message.type === 'GET_MEMORIES') return [];
       return null;
     });
     stubChrome(sendMessage);
@@ -784,7 +832,7 @@ describe('trusted-directory @ file references', () => {
     await renderElement(React.createElement(ChatPage));
     await flushPromises();
 
-    const textarea = inputByPlaceholder('给 DeepSeek++ 发送消息') as HTMLTextAreaElement;
+    const textarea = inputByPlaceholder('给 DeepSeek++ More 发送消息') as HTMLTextAreaElement;
     await act(async () => {
       setTextControlValue(textarea, '看下 @');
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -815,7 +863,7 @@ describe('trusted-directory @ file references', () => {
     });
     expect(container.textContent).toContain('已添加');
 
-    await enterText('给 DeepSeek++ 发送消息', '描述这张图片');
+    await enterText('给 DeepSeek++ More 发送消息', '描述这张图片');
     await clickButtonByLabel('发送');
 
     expect(sendMessage).toHaveBeenCalledWith({
@@ -840,7 +888,7 @@ describe('trusted-directory @ file references', () => {
     await renderElement(React.createElement(ChatPage));
     await flushPromises();
 
-    const textarea = inputByPlaceholder('给 DeepSeek++ 发送消息') as HTMLTextAreaElement;
+    const textarea = inputByPlaceholder('给 DeepSeek++ More 发送消息') as HTMLTextAreaElement;
     await act(async () => {
       setTextControlValue(textarea, '看下 @');
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -874,7 +922,7 @@ describe('trusted-directory @ file references', () => {
     await renderElement(React.createElement(ChatPage));
     await flushPromises();
 
-    const textarea = inputByPlaceholder('给 DeepSeek++ 发送消息') as HTMLTextAreaElement;
+    const textarea = inputByPlaceholder('给 DeepSeek++ More 发送消息') as HTMLTextAreaElement;
     await act(async () => {
       setTextControlValue(textarea, '看下 @read');
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -891,7 +939,7 @@ describe('trusted-directory @ file references', () => {
     await renderElement(React.createElement(ChatPage));
     await flushPromises();
 
-    const textarea = inputByPlaceholder('给 DeepSeek++ 发送消息') as HTMLTextAreaElement;
+    const textarea = inputByPlaceholder('给 DeepSeek++ More 发送消息') as HTMLTextAreaElement;
     await act(async () => {
       setTextControlValue(textarea, '参考 @src');
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1016,6 +1064,7 @@ async function flushPromises() {
 
 function inputByPlaceholder(placeholder: string): HTMLInputElement | HTMLTextAreaElement {
   const input = container.querySelector(`input[placeholder="${placeholder}"], textarea[placeholder="${placeholder}"]`);
+  if (!input) console.log(container.innerHTML);
   expect(input).toBeTruthy();
   return input as HTMLInputElement | HTMLTextAreaElement;
 }

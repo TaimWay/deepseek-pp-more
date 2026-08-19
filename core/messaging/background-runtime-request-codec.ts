@@ -19,6 +19,8 @@ import type { SyncCommandTarget } from '../types';
 import { normalizeUsageRangeDays } from '../usage/stats';
 import { normalizeUsageTurnInput } from '../usage/input-codec';
 import type { UsageRangeDays, UsageTurnRecord } from '../usage/types';
+import { normalizeExternalApiConfig } from '../external-api/store';
+import type { ExternalApiConfig } from '../external-api/contracts';
 import type { BackgroundRuntimeCommandContracts } from './background-runtime-contracts';
 
 type BackgroundRuntimeCommandType = keyof BackgroundRuntimeCommandContracts;
@@ -38,6 +40,8 @@ interface DecodedBackgroundRuntimePayloads {
   DELETE_AUTOMATION: AutomationIdRequest;
   RUN_AUTOMATION_NOW: AutomationIdRequest;
   SCENARIOS_UPDATED: ScenarioRuntimeRequest;
+  SAVE_EXTERNAL_API_CONFIG: ExternalApiConfig;
+  DELETE_DEEPSEEK_SESSIONS: { sessionIds: string[] };
 }
 
 export type BackgroundRuntimePayloadCommandType = keyof DecodedBackgroundRuntimePayloads;
@@ -74,6 +78,14 @@ export const BACKGROUND_RUNTIME_PAYLOAD_DECODERS: BackgroundRuntimePayloadDecode
     return decodeAutomationIdRequest(value, 'RUN_AUTOMATION_NOW');
   },
   SCENARIOS_UPDATED: decodeScenarioRuntimeRequest,
+  SAVE_EXTERNAL_API_CONFIG: normalizeExternalApiConfig,
+  DELETE_DEEPSEEK_SESSIONS(value) {
+    const payload = isRecord(value) ? value : {};
+    const sessionIds = Array.isArray(payload.sessionIds)
+      ? payload.sessionIds.filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+      : [];
+    return { sessionIds };
+  },
 };
 
 export function decodeBackgroundRuntimePayload<

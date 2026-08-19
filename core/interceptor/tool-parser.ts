@@ -17,11 +17,27 @@ const LEGACY_PARAMETER_OPEN_PREFIX = '<｜DSML｜parameter name="';
 const LEGACY_PARAMETER_TYPE_PREFIX = '" string="';
 const LEGACY_PARAMETER_CLOSE_TAG = '</｜DSML｜parameter>';
 
+
+
 export function extractToolCalls(text: string, input?: ToolParsingInput): ToolCall[] {
+  let normalizedText = text;
   const catalog = createToolInvocationCatalog(input?.descriptors);
+  for (const wrapper of ['tool_calls', 'tool_call', 'invoke']) {
+    const closeWrapper = `</${wrapper}>`;
+    if (normalizedText.includes(closeWrapper)) {
+      for (const name of catalog.invocationNames) {
+        const openTag = `<${name}>`;
+        if (normalizedText.includes(openTag) && !normalizedText.includes(`</${name}>`)) {
+          normalizedText = normalizedText.replace(closeWrapper, `</${name}>${closeWrapper}`);
+        }
+      }
+      normalizedText = normalizedText.replace(new RegExp(`<\\/?${wrapper}[^>]*>`, 'g'), '');
+    }
+  }
+
   return [
-    ...extractXmlToolCalls(text, catalog),
-    ...extractLegacyToolCalls(text, catalog),
+    ...extractXmlToolCalls(normalizedText, catalog),
+    ...extractLegacyToolCalls(normalizedText, catalog),
   ];
 }
 
@@ -310,8 +326,22 @@ function removeBlocks(text: string, blocks: readonly ToolCallBlockRange[]): stri
 }
 
 export function stripToolCalls(text: string, input?: ToolParsingInput): string {
+  let normalizedText = text;
   const catalog = createToolInvocationCatalog(input?.descriptors);
-  const withoutXml = removeBlocks(text, collectXmlToolCallBlocks(text, catalog));
+  for (const wrapper of ['tool_calls', 'tool_call', 'invoke']) {
+    const closeWrapper = `</${wrapper}>`;
+    if (normalizedText.includes(closeWrapper)) {
+      for (const name of catalog.invocationNames) {
+        const openTag = `<${name}>`;
+        if (normalizedText.includes(openTag) && !normalizedText.includes(`</${name}>`)) {
+          normalizedText = normalizedText.replace(closeWrapper, `</${name}>${closeWrapper}`);
+        }
+      }
+      normalizedText = normalizedText.replace(new RegExp(`<\\/?${wrapper}[^>]*>`, 'g'), '');
+    }
+  }
+
+  const withoutXml = removeBlocks(normalizedText, collectXmlToolCallBlocks(normalizedText, catalog));
   return removeBlocks(withoutXml, collectLegacyToolCallBlocks(withoutXml)).trim();
 }
 

@@ -10,6 +10,7 @@ export interface ChatRuntimeHandlerDependencies {
   service: ChatRuntimeService;
   getOfficialApiChatConfig(): Promise<OfficialApiChatConfig>;
   saveOfficialApiChatConfig(config: OfficialApiChatConfig): Promise<OfficialApiChatConfig>;
+  deleteSessions(sessionIds: string[]): Promise<{ ok: true; deletedCount: number; failedIds?: string[] }>;
 }
 
 export function createChatRuntimeHandlers(
@@ -31,6 +32,9 @@ export function createChatRuntimeHandlers(
     )),
     defineDeepSeekPayloadRuntimeCommandHandler('SAVE_OFFICIAL_API_CHAT_CONFIG', (config) => (
       dependencies.saveOfficialApiChatConfig(config)
+    )),
+    defineDeepSeekPayloadRuntimeCommandHandler('DELETE_DEEPSEEK_SESSIONS', ({ sessionIds }) => (
+      dependencies.deleteSessions(sessionIds)
     )),
   ]);
 }

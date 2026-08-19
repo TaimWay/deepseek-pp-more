@@ -272,6 +272,62 @@ describe('DeepSeek web adapter streaming', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('generates PoW headers for DEEPSEEK_FILE_UPLOAD_PATH when powHeaders is omitted', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = String(input);
+      if (url.includes('/api/v0/chat/create_pow_challenge')) {
+        const body = JSON.parse(String(init?.body || '{}'));
+        expect(body.target_path).toBe(DEEPSEEK_FILE_UPLOAD_PATH);
+        return jsonResponse({
+          data: {
+            biz_code: 0,
+            biz_data: {
+              challenge: {
+                algorithm: 'DeepSeekHashV1',
+                challenge: 'test-challenge',
+                salt: 'test-salt',
+                difficulty: 1,
+                signature: 'test-sig',
+                expire_at: Date.now() + 60000,
+              },
+            },
+          },
+        });
+      }
+      if (url.includes('/api/v0/file/upload_file')) {
+        const headers = init?.headers as Record<string, string>;
+        expect(headers['X-DS-PoW-Response']).toBeDefined();
+        return jsonResponse({
+          data: {
+            biz_code: 0,
+            biz_data: {
+              id: 'file-auto-pow-1',
+              file_name: 'auto.png',
+              file_size: 3,
+              mime_type: 'image/png',
+              status: 'SUCCESS',
+            },
+          },
+        });
+      }
+      return jsonResponse({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const uploaded = await uploadDeepSeekFile({
+      file: new Blob(['abc'], { type: 'image/png' }),
+      filename: 'auto.png',
+      modelType: 'vision',
+      clientHeaders: { Authorization: 'Bearer token' },
+    });
+
+    expect(uploaded).toMatchObject({
+      id: 'file-auto-pow-1',
+      fileName: 'auto.png',
+      status: 'SUCCESS',
+    });
+  });
+
   it('rejects image uploads when DeepSeek reports explicit audit rejection', async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({
       data: {

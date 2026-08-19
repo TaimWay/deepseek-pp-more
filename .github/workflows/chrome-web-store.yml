@@ -73,7 +73,7 @@ jobs:
           fi
 
           VERSION="$(node -p "require('./package.json').version")"
-          CHROME_ZIP="dist/deepseek-plus-plus-${VERSION}-chrome.zip"
+          CHROME_ZIP="dist/deepseek-pp-more-${VERSION}-chrome.zip"
           if [ ! -f "$CHROME_ZIP" ]; then
             echo "Chrome zip not found: $CHROME_ZIP" >&2
             exit 1

@@ -186,6 +186,11 @@ export const RUNTIME_COMMAND_CONTRACTS = {
   DELETE_AUTOMATION: typedCommand('payload-decoded', 'ack', 'background-error', 'live-only'),
   RUN_AUTOMATION_NOW: typedCommand('payload-decoded', 'value', 'background-error', 'live-only'),
   SCENARIOS_UPDATED: typedCommand('payload-decoded', 'value', 'background-error', 'live-only', 'optional'),
+  GET_EXTERNAL_API_STATE: typedCommand('none', 'value'),
+  SAVE_EXTERNAL_API_CONFIG: typedCommand('payload-decoded', 'value'),
+  RECONNECT_EXTERNAL_API: typedCommand('none', 'value'),
+  DELETE_DEEPSEEK_SESSIONS: typedCommand('payload-decoded', 'status-or-domain-error'),
+  GET_EXTERNAL_API_SESSIONS: typedCommand('none', 'value'),
   TOOL_CALL_EXECUTED: command('client-only', 'payload-cast', 'unrouted', 'none', 'declared-only'),
   MEMORIES_UPDATED: command('client-only', 'none', 'unrouted', 'none', 'declared-only', 'none'),
 } as const satisfies Record<string, RuntimeCommandContract>;

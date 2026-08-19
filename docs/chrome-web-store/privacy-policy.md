@@ -1,18 +1,18 @@
-# DeepSeek++ Privacy Policy
+# DeepSeek++ More Privacy Policy
 
 Effective date: 2026-07-14
 
-DeepSeek++ is a browser extension that enhances DeepSeek chat workflows with user-controlled floating chat on normal web pages, memory, skills, project context, saved items, prompt presets, MCP tools, side-panel Vision image attachments, multimodal media analysis, browser control tools, inline tool execution, local exports, downloadable artifacts, optional sync, automation, and optional side-panel chat.
+DeepSeek++ More is a browser extension that enhances DeepSeek chat workflows with user-controlled floating chat on normal web pages, memory, skills, project context, saved items, prompt presets, MCP tools, side-panel Vision image attachments, multimodal media analysis, browser control tools, inline tool execution, local exports, downloadable artifacts, optional sync, automation, and optional side-panel chat.
 
 This Privacy Policy explains what data the extension handles, how that data is used, when it may be transferred, and what controls users have.
 
 ## 1. Single Purpose
 
-DeepSeek++ has one purpose: to enhance DeepSeek chat workflows with user-controlled floating chat on normal web pages, memory, skills, projects, saved items, presets, tools, side-panel Vision image attachments, multimodal media analysis, browser control, local exports, optional sync, automation, and optional side-panel chat that the user controls.
+DeepSeek++ More has one purpose: to enhance DeepSeek chat workflows with user-controlled floating chat on normal web pages, memory, skills, projects, saved items, presets, tools, side-panel Vision image attachments, multimodal media analysis, browser control, local exports, optional sync, automation, and optional side-panel chat that the user controls.
 
 ## 2. Data Handled by the Extension
 
-DeepSeek++ may handle the following data only when needed for its user-facing features:
+DeepSeek++ More may handle the following data only when needed for its user-facing features:
 
 - DeepSeek conversation content, including prompts, model responses, and tool-call text shown on `chat.deepseek.com`.
 - User-created extension data, including memories, skills, local Skill supporting files selected by the user, project context, project files or source notes, saved snippets, bookmarks, prompt presets, MCP server settings, automation tasks, theme settings, background settings, pet settings, and tool execution history.
@@ -27,11 +27,11 @@ DeepSeek++ may handle the following data only when needed for its user-facing fe
 - DeepSeek session data available to the web page, only when needed to submit user-requested automation or continuation prompts.
 - DeepSeek conversation history, individual message text, saved items, generated artifact content, and attachment metadata when the user explicitly starts a local export or download.
 
-DeepSeek++ does not intentionally collect financial information, health information, precise location, payment information, or browsing history.
+DeepSeek++ More does not intentionally collect financial information, health information, precise location, payment information, or browsing history.
 
 ## 3. How Data Is Used
 
-DeepSeek++ uses handled data only to provide its disclosed features:
+DeepSeek++ More uses handled data only to provide its disclosed features:
 
 - Store and retrieve local memories, skills, project context, saved items, presets, settings, tasks, MCP configuration, and tool history.
 - Select relevant memories, skills, projects, saved items, presets, and tool definitions for use in DeepSeek prompts.
@@ -53,13 +53,13 @@ The extension does not use handled data for advertising, user profiling for adve
 
 Most extension data is stored locally in the user's browser using extension storage and IndexedDB. This includes memories, custom skills, project context, saved items, presets, settings, automation tasks, MCP configuration, DeepSeek API Key, multimodal API settings, and tool execution history.
 
-Conversation export artifacts, saved-item exports, and generated downloadable files are created only after the user starts an export or download and are saved through the browser's local download flow. DeepSeek++ does not upload exported files.
+Conversation export artifacts, saved-item exports, and generated downloadable files are created only after the user starts an export or download and are saved through the browser's local download flow. DeepSeek++ More does not upload exported files.
 
 Local data remains in the browser until the user edits or deletes it, clears browser extension data, or uninstalls the extension.
 
 ## 5. Data Transfer and Sharing
 
-DeepSeek++ does not operate a backend service for collecting extension data. The extension does not sell user data.
+DeepSeek++ More does not operate a backend service for collecting extension data. The extension does not sell user data.
 
 Data may be transferred only as part of user-facing features:
 
@@ -76,14 +76,14 @@ The extension does not transfer user data to advertising platforms, data brokers
 
 ## 6. Permissions
 
-DeepSeek++ requests these Chrome permissions for the following purposes:
+DeepSeek++ More requests these Chrome permissions for the following purposes:
 
 - `storage`: store local memories, skills, project context, saved items, presets, settings, automation tasks, MCP configuration, and tool history.
 - `alarms`: schedule and wake user-created automation tasks.
 - `contextMenus`: let the user send selected page text to side-panel chat or a configured right-click scenario.
 - `nativeMessaging`: connect to user-configured local MCP/native hosts, including the optional Shell and Multimodal Native Hosts.
 - `offscreen`: host an invisible extension document that runs isolated JavaScript, TypeScript, Python, and HTML sandbox requests outside the DeepSeek page, preventing the chat tab from being blocked by sandbox execution.
-- `debugger`: attach to a user-selected browser tab only when Browser Control is enabled, so DeepSeek++ can read an Accessibility Tree snapshot and perform user-visible browser actions requested through `browser_*` tools.
+- `debugger`: attach to a user-selected browser tab only when Browser Control is enabled, so DeepSeek++ More can read an Accessibility Tree snapshot and perform user-visible browser actions requested through `browser_*` tools.
 - `tabs`: list browser tabs and select the target tab for Browser Control. Tab group names may be shown when the browser exposes them without an additional required permission.
 - `identity`: start the user-approved Google Drive or OneDrive OAuth sign-in flow when the user enables one of those sync providers.
 - `sidePanel`: provide the extension management UI in Chrome's side panel.
@@ -97,7 +97,7 @@ DeepSeek++ requests these Chrome permissions for the following purposes:
 
 ## 7. User Controls
 
-Users can manage extension data from the DeepSeek++ side panel. Users can:
+Users can manage extension data from the DeepSeek++ More side panel. Users can:
 
 - View, create, edit, export, import, and delete memories.
 - Create, edit, attach, and remove project context and project files.
@@ -119,15 +119,15 @@ Users can manage extension data from the DeepSeek++ side panel. Users can:
 
 ## 8. Security
 
-DeepSeek++ stores extension data locally in the browser by default. Users should only configure trusted WebDAV servers, cloud sync accounts, MCP endpoints, and Native Messaging hosts. HTTPS endpoints are recommended for remote WebDAV and MCP connections.
+DeepSeek++ More stores extension data locally in the browser by default. Users should only configure trusted WebDAV servers, cloud sync accounts, MCP endpoints, and Native Messaging hosts. HTTPS endpoints are recommended for remote WebDAV and MCP connections.
 
 The extension does not hardcode third-party credentials. Optional credentials, including DeepSeek API Key, OpenAI/Gemini API keys, WebDAV credentials, and Google/Microsoft OAuth app credentials or sync tokens, are provided by the user and stored locally for the features the user configures.
 
 ## 9. Chrome Web Store Limited Use
 
-DeepSeek++ complies with the Chrome Web Store User Data Policy, including the Limited Use requirements. Data handled by the extension is used only for the extension's disclosed, user-facing features.
+DeepSeek++ More complies with the Chrome Web Store User Data Policy, including the Limited Use requirements. Data handled by the extension is used only for the extension's disclosed, user-facing features.
 
-DeepSeek++ does not:
+DeepSeek++ More does not:
 
 - Sell user data.
 - Use user data for personalized advertising.
@@ -136,7 +136,7 @@ DeepSeek++ does not:
 
 ## 10. Children
 
-DeepSeek++ is not directed to children and does not knowingly collect personal information from children.
+DeepSeek++ More is not directed to children and does not knowingly collect personal information from children.
 
 ## 11. Changes to This Policy
 
@@ -150,21 +150,21 @@ For privacy or support questions, open an issue at:
 
 ---
 
-# DeepSeek++ 隐私政策（中文参考）
+# DeepSeek++ More 隐私政策（中文参考）
 
 生效日期：2026-07-14
 
-DeepSeek++ 是一个浏览器扩展，用于增强 DeepSeek 对话工作流，提供用户可控的普通网页悬浮聊天、长期记忆、技能、项目上下文、保存项、提示词预设、MCP 工具、侧边栏识图图片附件、多模态媒体分析、浏览器控制工具、内联工具执行、本地导出、可下载产物、可选同步、自动化任务和可选侧边栏对话。
+DeepSeek++ More 是一个浏览器扩展，用于增强 DeepSeek 对话工作流，提供用户可控的普通网页悬浮聊天、长期记忆、技能、项目上下文、保存项、提示词预设、MCP 工具、侧边栏识图图片附件、多模态媒体分析、浏览器控制工具、内联工具执行、本地导出、可下载产物、可选同步、自动化任务和可选侧边栏对话。
 
 本隐私政策说明扩展会处理哪些数据、如何使用这些数据、何时可能传输数据，以及用户可以如何控制自己的数据。
 
 ## 1. 单一用途
 
-DeepSeek++ 的单一用途是增强 DeepSeek 对话工作流，提供由用户控制的普通网页悬浮聊天、记忆、技能、项目、保存项、预设、工具、侧边栏识图图片附件、多模态媒体分析、浏览器控制、本地导出、可选同步、自动化和可选侧边栏对话能力。
+DeepSeek++ More 的单一用途是增强 DeepSeek 对话工作流，提供由用户控制的普通网页悬浮聊天、记忆、技能、项目、保存项、预设、工具、侧边栏识图图片附件、多模态媒体分析、浏览器控制、本地导出、可选同步、自动化和可选侧边栏对话能力。
 
 ## 2. 扩展处理的数据
 
-DeepSeek++ 只会在提供用户可见功能所需时处理以下数据：
+DeepSeek++ More 只会在提供用户可见功能所需时处理以下数据：
 
 - DeepSeek 对话内容，包括 `chat.deepseek.com` 上的提示词、模型回复和工具调用文本。
 - 用户创建的扩展数据，包括记忆、技能、用户选择的本地 Skill 支持文件、项目上下文、项目文件或资料说明、保存片段、书签、提示词预设、MCP 服务设置、自动化任务、主题设置、背景设置、宠物设置和工具执行历史。
@@ -179,11 +179,11 @@ DeepSeek++ 只会在提供用户可见功能所需时处理以下数据：
 - DeepSeek 网页会话中可用的会话数据，仅在执行用户请求的自动化任务或续跑提示词时使用。
 - 用户明确开始本地导出或下载时读取的 DeepSeek 对话历史、单条消息文本、保存项、生成产物内容和附件元数据。
 
-DeepSeek++ 不会有意收集金融信息、健康信息、精确位置、支付信息或浏览历史。
+DeepSeek++ More 不会有意收集金融信息、健康信息、精确位置、支付信息或浏览历史。
 
 ## 3. 数据用途
 
-DeepSeek++ 只会将数据用于已经披露的功能：
+DeepSeek++ More 只会将数据用于已经披露的功能：
 
 - 保存和读取本地记忆、技能、项目上下文、保存项、预设、设置、任务、MCP 配置和工具历史。
 - 为 DeepSeek 提示词选择并使用相关记忆、技能、项目、保存项、预设和工具定义。
@@ -205,13 +205,13 @@ DeepSeek++ 只会将数据用于已经披露的功能：
 
 大多数扩展数据默认通过浏览器扩展存储和 IndexedDB 保存在用户浏览器本地，包括记忆、自定义技能、项目上下文、保存项、预设、设置、自动化任务、MCP 配置、DeepSeek API Key、多模态 API 设置和工具执行历史。
 
-对话导出文件、保存项导出和生成的可下载文件只会在用户主动开始导出或下载后生成，并通过浏览器本地下载流程保存。DeepSeek++ 不会上传导出的文件。
+对话导出文件、保存项导出和生成的可下载文件只会在用户主动开始导出或下载后生成，并通过浏览器本地下载流程保存。DeepSeek++ More 不会上传导出的文件。
 
 本地数据会保留到用户编辑或删除、清除浏览器扩展数据，或卸载扩展为止。
 
 ## 5. 数据传输与共享
 
-DeepSeek++ 不运营用于收集扩展数据的后台服务。扩展不会出售用户数据。
+DeepSeek++ More 不运营用于收集扩展数据的后台服务。扩展不会出售用户数据。
 
 数据只会在用户可见功能需要时传输：
 
@@ -228,7 +228,7 @@ DeepSeek++ 不运营用于收集扩展数据的后台服务。扩展不会出售
 
 ## 6. 权限说明
 
-DeepSeek++ 请求以下 Chrome 权限：
+DeepSeek++ More 请求以下 Chrome 权限：
 
 - `storage`：保存本地记忆、技能、项目上下文、保存项、预设、设置、自动化任务、MCP 配置和工具历史。
 - `alarms`：调度和唤醒用户创建的自动化任务。
@@ -249,7 +249,7 @@ DeepSeek++ 请求以下 Chrome 权限：
 
 ## 7. 用户控制
 
-用户可以在 DeepSeek++ 侧边栏中管理扩展数据，包括：
+用户可以在 DeepSeek++ More 侧边栏中管理扩展数据，包括：
 
 - 查看、创建、编辑、导出、导入和删除记忆。
 - 创建、编辑、附加和移除项目上下文与项目文件。
@@ -271,15 +271,15 @@ DeepSeek++ 请求以下 Chrome 权限：
 
 ## 8. 安全
 
-DeepSeek++ 默认将扩展数据保存在用户浏览器本地。用户应只配置可信的 WebDAV 服务器、云同步账户、MCP 端点和 Native Messaging host。远程 WebDAV 和 MCP 连接建议使用 HTTPS。
+DeepSeek++ More 默认将扩展数据保存在用户浏览器本地。用户应只配置可信的 WebDAV 服务器、云同步账户、MCP 端点和 Native Messaging host。远程 WebDAV 和 MCP 连接建议使用 HTTPS。
 
 扩展不会硬编码第三方凭据。包括 DeepSeek API Key、OpenAI/Gemini API Key、WebDAV 凭据以及 Google/Microsoft OAuth 应用凭据或同步令牌在内的可选凭据由用户提供，并仅为用户配置的功能本地保存和使用。
 
 ## 9. Chrome Web Store Limited Use
 
-DeepSeek++ 遵守 Chrome Web Store 用户数据政策，包括 Limited Use 要求。扩展处理的数据只会用于已经披露的用户可见功能。
+DeepSeek++ More 遵守 Chrome Web Store 用户数据政策，包括 Limited Use 要求。扩展处理的数据只会用于已经披露的用户可见功能。
 
-DeepSeek++ 不会：
+DeepSeek++ More 不会：
 
 - 出售用户数据。
 - 将用户数据用于个性化广告。
@@ -288,7 +288,7 @@ DeepSeek++ 不会：
 
 ## 10. 儿童
 
-DeepSeek++ 不面向儿童，也不会有意收集儿童个人信息。
+DeepSeek++ More 不面向儿童，也不会有意收集儿童个人信息。
 
 ## 11. 政策变更
 

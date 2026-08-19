@@ -185,6 +185,31 @@ export default function ChatPage() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+      chrome.storage.session.get(['dpp_ask_messages', 'dpp_ask_input']).then((data) => {
+        if (data.dpp_ask_messages && Array.isArray(data.dpp_ask_messages) && data.dpp_ask_messages.length > 0) {
+          setMessages(data.dpp_ask_messages);
+        }
+        if (typeof data.dpp_ask_input === 'string') {
+          setInputText(data.dpp_ask_input);
+        }
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+      chrome.storage.session.set({ dpp_ask_messages: messages });
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+      chrome.storage.session.set({ dpp_ask_input: inputText });
+    }
+  }, [inputText]);
+
 
   useEffect(() => {
     imageAttachmentsRef.current = imageAttachments;
@@ -294,9 +319,9 @@ export default function ChatPage() {
     }
   };
 
-  const sendMessage = () => {
-    const text = inputText.trim();
-    if (!text || !canSendMessage) return;
+  const sendMessage = (overrideText?: string) => {
+    const text = (overrideText ?? inputText).trim();
+    if (!text || (!overrideText && !canSendMessage)) return;
     const refFileIds = readyImageFileIds;
     setAtTrigger({ active: false, query: '' });
 
@@ -319,6 +344,26 @@ export default function ChatPage() {
       setError(getRuntimeErrorMessage(submitError) || t('sidepanel.chatPage.sendFailed'));
       setIsStreaming(false);
     });
+  };
+
+  const handleQuickPreset = (type: 'explain_page' | 'summarize_page' | 'ask_page' | 'free_chat') => {
+    let prompt = '';
+    if (type === 'explain_page') {
+      prompt = t('sidepanel.settings.explainPagePrompt');
+    } else if (type === 'summarize_page') {
+      prompt = t('sidepanel.settings.summarizePagePrompt');
+    } else if (type === 'ask_page') {
+      prompt = t('sidepanel.settings.askPagePrompt');
+      setInputText(prompt);
+      inputRef.current?.focus();
+      return;
+    } else if (type === 'free_chat') {
+      inputRef.current?.focus();
+      return;
+    }
+    if (prompt) {
+      sendMessage(prompt);
+    }
   };
 
   const newSession = async () => {
@@ -705,25 +750,77 @@ export default function ChatPage() {
         {confirmNode}
 
         {messages.length === 0 && !isStreaming && (
-          <div className="ds-chat-empty">
+          <div className="ds-chat-empty space-y-4">
             <div className="ds-empty-state-icon">
               <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
-            <div className="ds-empty-state-title">{t('sidepanel.chatPage.empty')}</div>
-            <div className="ds-empty-state-description">{t('sidepanel.chatPage.emptyHelp')}</div>
+            <div>
+              <div className="ds-empty-state-title">{t('sidepanel.chatPage.empty')}</div>
+              <div className="ds-empty-state-description">{t('sidepanel.chatPage.emptyHelp')}</div>
+            </div>
+
+            <div className="flex flex-wrap gap-2 justify-center pt-2 max-w-sm">
+              <button
+                type="button"
+                onClick={() => handleQuickPreset('explain_page')}
+                className="px-3 py-1.5 rounded-full text-xs font-medium border transition-all hover:scale-105"
+                style={{ background: 'var(--ds-surface)', borderColor: 'var(--ds-border)', color: 'var(--ds-text)' }}
+              >
+                {t('sidepanel.settings.explainPageChip')}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickPreset('summarize_page')}
+                className="px-3 py-1.5 rounded-full text-xs font-medium border transition-all hover:scale-105"
+                style={{ background: 'var(--ds-surface)', borderColor: 'var(--ds-border)', color: 'var(--ds-text)' }}
+              >
+                {t('sidepanel.settings.summarizePageChip')}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickPreset('ask_page')}
+                className="px-3 py-1.5 rounded-full text-xs font-medium border transition-all hover:scale-105"
+                style={{ background: 'var(--ds-surface)', borderColor: 'var(--ds-border)', color: 'var(--ds-text)' }}
+              >
+                {t('sidepanel.settings.askAboutPageChip')}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickPreset('free_chat')}
+                className="px-3 py-1.5 rounded-full text-xs font-medium border transition-all hover:scale-105"
+                style={{ background: 'var(--ds-surface)', borderColor: 'var(--ds-border)', color: 'var(--ds-text)' }}
+              >
+                {t('sidepanel.settings.freeChatChip')}
+              </button>
+            </div>
           </div>
         )}
 
-        {messages.map((msg, index) => (
+        {messages.map((msg, index) => {
+          let displayMsg = { ...msg };
+          if (displayMsg.text) {
+            displayMsg.text = displayMsg.text
+              .replace(/<tool_calls>[\s\S]*?<\/tool_calls>/g, '')
+              .replace(/<browser_snapshot>[\s\S]*?<\/browser_snapshot>/g, '')
+              .replace(/<browser_list_tabs>[\s\S]*?<\/browser_list_tabs>/g, '')
+              .replace(/<web_fetch>[\s\S]*?<\/web_fetch>/g, '')
+              .replace(/<web_search>[\s\S]*?<\/web_search>/g, '')
+              .replace(/<tool_calls>[\s\S]*$/, '')
+              .replace(/<browser_snapshot>[\s\S]*$/, '')
+              .replace(/<browser_list_tabs>[\s\S]*$/, '')
+              .replace(/<web_fetch>[\s\S]*$/, '')
+              .replace(/<web_search>[\s\S]*$/, '');
+          }
+          return (
           <ChatMessage
             key={`${msg.role}-${index}-${msgSeq}`}
-            message={msg}
+            message={displayMsg}
             isStreaming={isStreaming && index === messages.length - 1 && msg.role === 'assistant'}
             onRichContentRendered={scrollMessagesToBottom}
           />
-        ))}
+        )})}
 
         {error && (
           <div className="ds-chat-error-wrap">
@@ -840,7 +937,7 @@ export default function ChatPage() {
               )}
               <button
                 type="button"
-                onClick={sendMessage}
+                onClick={() => sendMessage()}
                 disabled={!canSendMessage}
                 className="ds-chat-send-button"
                 title={t('sidepanel.chatPage.send')}

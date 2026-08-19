@@ -36,6 +36,7 @@ import {
   encodeDeepSeekRouteRequest,
   encodeCompletionRequest,
   encodeCreateSessionRequest,
+  encodeDeleteSessionRequest,
   encodeHistoryRequest,
   encodePowChallengeRequest,
   normalizeDeepSeekMessageId,
@@ -96,7 +97,7 @@ export interface DeepSeekFileUploadInput {
   filename: string;
   modelType: string | null;
   clientHeaders: Record<string, string>;
-  powHeaders: Record<string, string>;
+  powHeaders?: Record<string, string>;
 }
 
 export type { DeepSeekUploadedFile } from './contracts';
@@ -172,6 +173,21 @@ async function createChatSessionWithContext(
   }
 
   return chatSessionId;
+}
+
+export async function deleteChatSession(
+  chatSessionId: string,
+  clientHeaders: Record<string, string>,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  const response = await requestDeepSeek(
+    encodeDeleteSessionRequest(chatSessionId, clientHeaders),
+    'DeepSeek chat session delete',
+    'session',
+    { signal },
+  );
+  const json = await readJsonResponse(response, 'DeepSeek chat session delete', 'session');
+  return response.ok && (json?.data?.biz_code === 0 || json?.biz_code === 0);
 }
 
 export async function createPowHeaders(
@@ -298,13 +314,18 @@ export async function uploadDeepSeekFile(input: DeepSeekFileUploadInput, signal?
   const form = new FormData();
   form.append('file', input.file, input.filename);
 
+  let powHeaders = input.powHeaders;
+  if (!powHeaders) {
+    powHeaders = await createPowHeadersForPath(input.clientHeaders, DEEPSEEK_FILE_UPLOAD_PATH, undefined, signal);
+  }
+
   const response = await requestDeepSeek(
     encodeDeepSeekRouteRequest('uploadFile', {
       credentials: 'include',
       headers: {
         [BYPASS_HOOK_HEADER]: '1',
         ...input.clientHeaders,
-        ...input.powHeaders,
+        ...powHeaders,
         'x-thinking-enabled': '0',
         'x-model-type': normalizeDeepSeekModelType(input.modelType),
         'x-file-size': String(input.file.size),

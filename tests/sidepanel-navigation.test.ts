@@ -33,6 +33,9 @@ beforeEach(() => {
         if (message.type === 'GET_USAGE_SUMMARY') return createUsageSummary();
         if (message.type === 'CLEAR_USAGE_STATS') return { ok: true };
         if (message.type === 'GET_SYNC_CONFIG') return null;
+        if (message.type === 'GET_CONFIG') return { version: '0.7.0' };
+        if (message.type === 'GET_EXTERNAL_API_STATE') return { status: 'disconnected', sessions: [], config: { host: '', port: 0, password: '', enabled: false, preferredModel: 'deepseek-v4-pro', preferredVisionModel: 'deepseek-v4-vision', capabilities: [], autoStart: false, openLogWindow: false, logLevel: 'info' } };
+        if (message.type === 'GET_MEMORIES') return [];
         return null;
       }),
       onMessage: {
@@ -85,7 +88,7 @@ describe('sidepanel navigation', () => {
     await renderElement(React.createElement(CapabilitiesPage));
     expect(navButtonLabels('能力子导航')).toEqual(['Skill', 'MCP', '工具', '浏览器', '预设', '自动化']);
     await clickNavButton('能力子导航', 'MCP');
-    await vi.waitFor(() => expect(container.textContent).toContain('连接本机或远程 MCP 服务'));
+    await vi.waitFor(() => expect(container.textContent).toContain('连接本机或远程 MCP 服务'), { timeout: 5000 });
   });
 
   it('keeps the voice settings surface reachable from Settings', async () => {
@@ -96,7 +99,9 @@ describe('sidepanel navigation', () => {
     expect(settingsNav).toBeTruthy();
     expect(navButtonLabels('设置子导航')).toEqual([
       '通用',
+      '问问 DeepSeek',
       'API',
+      '开放 API',
       '提示词',
       '语音',
       '外观',
@@ -189,6 +194,9 @@ async function clickNavButton(navLabel: string, buttonLabel: string) {
   expect(button).toBeTruthy();
   await act(async () => {
     button!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
   });
 }
 

@@ -8,6 +8,7 @@ export const DEEPSEEK_WEB_ROUTES = {
   powChallenge: '/api/v0/chat/create_pow_challenge',
   createSession: '/api/v0/chat_session/create',
   fetchSessions: '/api/v0/chat_session/fetch_page',
+  deleteSession: '/api/v0/chat_session/delete',
   uploadFile: '/api/v0/file/upload_file',
   fetchFiles: '/api/v0/file/fetch_files',
 } as const;

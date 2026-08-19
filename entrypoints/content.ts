@@ -574,6 +574,10 @@ let exportCapabilityScope: ContentResourceScope | null = null;
 let exportDownloadManager: BrowserDownloadManager | null = null;
 let backgroundCapabilityScope: ContentResourceScope | null = null;
 let petCapabilityScope: ContentResourceScope | null = null;
+let inputToolboxScope: ContentResourceScope | null = null;
+let extSearchActiveState = false;
+let agentCallActiveState = false;
+const INPUT_TOOLBOX_ID = 'dpp-input-toolbox';
 
 function contentT(key: LocaleMessageKey, params?: MessageParams): string {
   return currentContentTranslator.t(key, params);
@@ -905,6 +909,7 @@ function createContentCapabilityControllers(): readonly ContentCapabilityControl
       stopBackgroundCapability,
     ),
     createDomCapability("pet", startPetCapability, stopPetCapability),
+    createDomCapability("input-toolbox", startInputToolboxCapability, stopInputToolboxCapability),
     chatController,
   ];
 }
@@ -1241,6 +1246,10 @@ function startBackgroundCapability(
       handle: scheduleContainerBackgroundPatch,
     }),
   );
+  window.addEventListener("resize", scheduleContainerBackgroundPatch, { passive: true });
+  scope.addCleanup("cleanup", () => {
+    window.removeEventListener("resize", scheduleContainerBackgroundPatch);
+  });
   void sendRuntimeMessage<BackgroundConfig | null>({
     type: "GET_BACKGROUND",
   }).then((config) => {
@@ -1269,6 +1278,17 @@ function stopPetCapability(): void {
   removePet();
   currentPetConfig = null;
   document.getElementById(PET_STYLE_ID)?.remove();
+}
+
+function startInputToolboxCapability(scope: ContentResourceScope): void {
+  inputToolboxScope = scope;
+  ensureInputToolbox();
+}
+
+function stopInputToolboxCapability(): void {
+  inputToolboxScope = null;
+  document.getElementById(`${INPUT_TOOLBOX_ID}-left`)?.remove();
+  document.getElementById(`${INPUT_TOOLBOX_ID}-right`)?.remove();
 }
 
 async function dispatchMainWorldMessage(
@@ -8868,6 +8888,17 @@ function stripToolCallTextNodes(root: Element) {
   for (const parent of changedParents) {
     pruneEmptyToolContainers(parent, root);
   }
+  checkAndHideEmptyMessage(root);
+}
+
+function checkAndHideEmptyMessage(root: Element) {
+  const msgEl = root.closest('.ds-message, [class*="message-wrapper"], [class*="Message"]');
+  if (!msgEl || msgEl.hasAttribute('data-dpp-hidden-empty-message')) return;
+  const contentEl = msgEl.querySelector('.ds-markdown, .markdown-body, [class*="content"]') || msgEl;
+  if (!contentEl.textContent?.trim() && !contentEl.querySelector('.dpp-tool-block, .dpp-artifact-results, img, [class*="attachment"]')) {
+    msgEl.setAttribute('data-dpp-hidden-empty-message', 'true');
+    (msgEl as HTMLElement).style.setProperty('display', 'none', 'important');
+  }
 }
 
 /**
@@ -9105,9 +9136,26 @@ function scheduleContainerBackgroundPatch() {
 }
 
 function patchContainerBackgrounds() {
+  ensureInputToolbox();
   if (!document.body.classList.contains("dpp-bg-active")) return;
   const root = document.getElementById("root");
   if (!root) return;
+
+  const selectors = [
+    'header', 'aside', '[class*="sidebar_"]', '[class*="header_"]',
+    '[class*="bottom_"]', '[class*="footer_"]', '[class*="layout_"]', '[class*="chat-"]'
+  ];
+  
+  // Re-apply data-dpp-transparent to elements that might have lost it due to React re-render
+  const elements = document.querySelectorAll(selectors.join(', '));
+  elements.forEach(el => {
+    if (el.tagName === 'MAIN' || el.id === 'root' || el.id === '__next') return;
+    const style = getComputedStyle(el);
+    // Add transparent tag to anything that has a background, so the background stylesheet applies the translucent surface
+    if (hasVisibleBackground(style) && !el.hasAttribute("data-dpp-transparent")) {
+      el.setAttribute("data-dpp-transparent", "");
+    }
+  });
 
   const textarea = getPromptTextarea();
   if (!textarea) return;
@@ -9118,19 +9166,9 @@ function patchContainerBackgrounds() {
   let el = inputBox.parentElement;
   while (el && el !== root && el !== document.body) {
     const style = getComputedStyle(el);
-    if (hasVisibleBackground(style)) {
-      (el as HTMLElement).setAttribute("data-dpp-transparent", "");
+    if (hasVisibleBackground(style) && !el.hasAttribute("data-dpp-transparent")) {
+      el.setAttribute("data-dpp-transparent", "");
     }
-
-    if (style.position === "sticky") {
-      for (const child of el.children) {
-        if (child.contains(textarea)) continue;
-        if (hasVisibleBackground(getComputedStyle(child))) {
-          (child as HTMLElement).setAttribute("data-dpp-transparent", "");
-        }
-      }
-    }
-
     el = el.parentElement;
   }
 }
@@ -9488,6 +9526,9 @@ function finishPetDrag(event: PointerEvent) {
     });
     currentPetConfig = config;
     void sendRuntimeMessage({ type: "SAVE_PET", payload: config });
+  } else if (!moved) {
+    // @ts-ignore
+void sendRuntimeMessage({ type: "OPEN_CHAT_WITH_TEXT", text: "" });
   }
 
   // After dragging, reschedule the current looping state because hidePetBubble paused it.
@@ -9853,4 +9894,10 @@ function applyBackground(config: BackgroundConfig | null) {
   if (!existingStyle) document.head.appendChild(styleEl);
 
   patchContainerBackgrounds();
+}
+
+function ensureInputToolbox(): void {
+  // User requested removal of injected buttons in the composer
+  document.querySelectorAll('[data-dpp-itb]').forEach(el => el.remove());
+  return;
 }

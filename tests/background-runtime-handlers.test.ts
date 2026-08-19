@@ -31,6 +31,10 @@ const R44_COMMANDS = [
   'DELETE_AUTOMATION',
   'RUN_AUTOMATION_NOW',
   'SCENARIOS_UPDATED',
+  'GET_EXTERNAL_API_STATE',
+  'SAVE_EXTERNAL_API_CONFIG',
+  'RECONNECT_EXTERNAL_API',
+  'GET_EXTERNAL_API_SESSIONS',
 ] as const;
 
 const R44_PAYLOAD_COMMANDS = [
@@ -48,6 +52,8 @@ const R44_PAYLOAD_COMMANDS = [
   'DELETE_AUTOMATION',
   'RUN_AUTOMATION_NOW',
   'SCENARIOS_UPDATED',
+  'SAVE_EXTERNAL_API_CONFIG',
+  'DELETE_DEEPSEEK_SESSIONS',
 ] as const;
 
 const context: RuntimeMessageContext = {
@@ -60,7 +66,7 @@ const context: RuntimeMessageContext = {
 };
 
 describe('R4.4 background runtime closure', () => {
-  it('owns exactly the final 17 handlers and 14 receiving decoders', () => {
+  it('owns exactly the final 21 handlers and 16 receiving decoders', () => {
     const handlers = createBackgroundRuntimeHandlers(createDependencies());
     expect(handlers.map((handler) => handler.type).sort()).toEqual([...R44_COMMANDS].sort());
     expect(Object.keys(BACKGROUND_RUNTIME_PAYLOAD_DECODERS).sort())
@@ -217,6 +223,66 @@ describe('R4.4 background runtime closure', () => {
     })).rejects.toThrow('contains an unsupported field: unsupported');
     expect(dependencies.scenario.deleteScenario).not.toHaveBeenCalled();
   });
+
+  it('dispatches external API runtime requests and notifies on updates', async () => {
+    const dependencies = createDependencies();
+    const handlers = createBackgroundRuntimeHandlers(dependencies);
+
+    const state = await dispatch(handlers, { type: 'GET_EXTERNAL_API_STATE' });
+    expect(state).toEqual({
+      config: {
+        enabled: true,
+        relayWsUrl: 'ws://127.0.0.1:3000/ws',
+        relayHost: '127.0.0.1',
+        apiKey: '',
+        apiKeys: [],
+        extensionToken: '',
+        preferredBackend: 'auto',
+        defaultModel: 'deepseek-v4-flash',
+        corsEnabled: true,
+        autoStartRelay: false,
+        relayPort: 3000,
+        allowAgentTools: true,
+        allowMultimodal: true,
+        injectSystemInfo: true,
+        enableMemory: false,
+        debugMode: false,
+        interceptRequests: false,
+        maxToolSteps: 20,
+        toolTimeoutSeconds: 30,
+        toolGranularSettings: { web_search: true },
+        customCorsOrigins: '*',
+        autoRefreshLogInterval: 0,
+      },
+      status: {
+        enabled: true,
+        connected: false,
+        relayWsUrl: 'ws://127.0.0.1:3000/ws',
+        activeRequests: 0,
+        lastConnectedAt: null,
+        lastError: null,
+      },
+    });
+
+    const saveResult = await dispatch(handlers, {
+      type: 'SAVE_EXTERNAL_API_CONFIG',
+      payload: {
+        enabled: true,
+        relayWsUrl: 'ws://127.0.0.1:3000/ws',
+        apiKey: 'sk-new-key',
+        extensionToken: '',
+        preferredBackend: 'official-api',
+        defaultModel: 'deepseek-v4-pro',
+      },
+    });
+    expect(saveResult).toMatchObject({ ok: true });
+    expect(dependencies.externalApi.saveConfig).toHaveBeenCalled();
+    expect(dependencies.externalApi.notifyStatusChanged).toHaveBeenCalled();
+
+    const reconnectResult = await dispatch(handlers, { type: 'RECONNECT_EXTERNAL_API' });
+    expect(reconnectResult).toMatchObject({ ok: true });
+    expect(dependencies.externalApi.reconnect).toHaveBeenCalled();
+  });
 });
 
 function createDependencies(): BackgroundRuntimeHandlerDependencies {
@@ -277,6 +343,44 @@ function createDependencies(): BackgroundRuntimeHandlerDependencies {
       })),
       deleteScenario: vi.fn(async () => undefined),
       refreshScenarioMenus: vi.fn(async () => undefined),
+    },
+    externalApi: {
+      getConfig: vi.fn(async () => ({
+        enabled: true,
+        relayWsUrl: 'ws://127.0.0.1:3000/ws',
+        relayHost: '127.0.0.1',
+        apiKey: '',
+        apiKeys: [],
+        extensionToken: '',
+        preferredBackend: 'auto' as const,
+        defaultModel: 'deepseek-v4-flash',
+        corsEnabled: true,
+        autoStartRelay: false,
+        relayPort: 3000,
+        allowAgentTools: true,
+        allowMultimodal: true,
+        injectSystemInfo: true,
+        enableMemory: false,
+        debugMode: false,
+        interceptRequests: false,
+        maxToolSteps: 20,
+        toolTimeoutSeconds: 30,
+        toolGranularSettings: { web_search: true },
+        customCorsOrigins: '*',
+        autoRefreshLogInterval: 0,
+      })),
+      saveConfig: vi.fn(async (cfg) => cfg),
+      reconnect: vi.fn(async () => undefined),
+      getStatus: vi.fn(() => ({
+        enabled: true,
+        connected: false,
+        relayWsUrl: 'ws://127.0.0.1:3000/ws',
+        activeRequests: 0,
+        lastConnectedAt: null,
+        lastError: null,
+      })),
+      notifyStatusChanged: vi.fn(),
+      getSessions: vi.fn(async () => []),
     },
   };
 }

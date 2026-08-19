@@ -129,19 +129,19 @@ Creates an invisible extension document for isolated JavaScript, TypeScript, Pyt
 #### `debugger`
 
 ```text
-Enables the optional Browser Control feature. When the user enables Browser Control, DeepSeek++ attaches to the selected browser tab to read an Accessibility Tree snapshot and perform visible browser actions requested through browser_* tools. Users can disable Browser Control or detach from the selected tab in the side panel.
+Enables the optional Browser Control feature. When the user enables Browser Control, DeepSeek++ More attaches to the selected browser tab to read an Accessibility Tree snapshot and perform visible browser actions requested through browser_* tools. Users can disable Browser Control or detach from the selected tab in the side panel.
 ```
 
 #### `tabs`
 
 ```text
-Lists browser tabs and lets the user choose which tab Browser Control should operate on. Tab titles and URLs are shown only in the extension side panel and returned as browser-control tool context when the user enables the feature. If the browser exposes tab group metadata without an additional permission, DeepSeek++ may show group names only to help users identify the target tab.
+Lists browser tabs and lets the user choose which tab Browser Control should operate on. Tab titles and URLs are shown only in the extension side panel and returned as browser-control tool context when the user enables the feature. If the browser exposes tab group metadata without an additional permission, DeepSeek++ More may show group names only to help users identify the target tab.
 ```
 
 #### `identity`
 
 ```text
-Starts the user-approved Google Drive or OneDrive OAuth sign-in flow when the user enables one of those sync providers. DeepSeek++ uses this permission only to connect the user's own OAuth app configuration and stores sync credentials locally.
+Starts the user-approved Google Drive or OneDrive OAuth sign-in flow when the user enables one of those sync providers. DeepSeek++ More uses this permission only to connect the user's own OAuth app configuration and stores sync credentials locally.
 ```
 
 #### `sidePanel`
@@ -171,7 +171,7 @@ Allows side-panel chat to send user-entered prompts to the official DeepSeek API
 #### Host permissions: `*://cn.bing.com/*`, `*://www.bing.com/*`
 
 ```text
-Allows the built-in web search tool to send a user-requested search query to Bing and return the resulting titles, links, and snippets to the active DeepSeek conversation. These hosts are used only when the user enables or invokes web search; DeepSeek++ does not use them for background browsing or analytics.
+Allows the built-in web search tool to send a user-requested search query to Bing and return the resulting titles, links, and snippets to the active DeepSeek conversation. These hosts are used only when the user enables or invokes web search; DeepSeek++ More does not use them for background browsing or analytics.
 ```
 
 #### Host permissions: `https://accounts.google.com/*`, `https://oauth2.googleapis.com/*`, `https://www.googleapis.com/*`
@@ -194,7 +194,7 @@ Allows users to connect to their own WebDAV or MCP endpoints. The extension requ
 
 ### Data Use Certification
 
-Use the privacy policy in `docs/chrome-web-store/privacy-policy.md`. The policy states that DeepSeek++:
+Use the privacy policy in `docs/chrome-web-store/privacy-policy.md`. The policy states that DeepSeek++ More:
 
 - Does not sell user data.
 - Does not use user data for advertising.
@@ -213,7 +213,7 @@ Use this reviewer note:
 4. Open Settings and switch Language between English and Simplified Chinese; the side-panel labels and built-in tool guidance should update.
 5. Create a memory or Skill in the side panel.
 6. Send a DeepSeek message that uses the saved memory/Skill. The extension should use the selected language for extension UI while preserving the user-authored memory/Skill text.
-7. In a DeepSeek conversation, use the DeepSeek++ export button next to the official reply actions such as copy and share. The extension should show format choices, default to HTML, and save the selected current-conversation export formats locally.
+7. In a DeepSeek conversation, use the DeepSeek++ More export button next to the official reply actions such as copy and share. The extension should show format choices, default to HTML, and save the selected current-conversation export formats locally.
 8. In the side panel, create a saved snippet and insert it into chat, then export saved items as Markdown or JSON.
 9. Open a normal web page outside chat.deepseek.com and verify the DS++ Chat floating launcher appears. Click it to open the lightweight chat window, then close it. In Settings > Appearance, turn off floating chat and refresh the page; the launcher should stay hidden.
 10. In Capabilities > Browser, enable Browser Control, choose a normal web tab, and verify the page shows a selected target. Browser Control can be disabled or detached from the same page.

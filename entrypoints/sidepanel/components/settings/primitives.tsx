@@ -503,6 +503,9 @@ export function useBanner(dismissMs = 4000) {
       timer.current = setTimeout(() => setBanner(null), dismissMs);
     }
   };
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
   const clear = () => {
     if (timer.current) clearTimeout(timer.current);
     setBanner(null);

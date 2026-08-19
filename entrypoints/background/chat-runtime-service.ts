@@ -8,7 +8,7 @@ import type {
   OfficialDeepSeekTurn,
   SubmitOfficialDeepSeekInput,
 } from '../../core/deepseek/official-api';
-import { extractToolCalls } from '../../core/interceptor/tool-parser';
+import { extractToolCalls, stripToolCalls } from '../../core/interceptor/tool-parser';
 import {
   materializeDeepSeekImageUpload,
   type EncodedDeepSeekImageUploadRequest,
@@ -263,7 +263,11 @@ export function createChatRuntimeService(
       }
 
       const executions: ToolExecutionRecord[] = [];
-      for (const call of toolCalls) executions.push(await executeChatTool(turn, call));
+      for (const call of toolCalls) {
+        emitChunk(turn, { text: `\n\n> 正在执行操作: ${call.name}...\n\n`, done: false, phase: 'answer' }, excludeTabId);
+        executions.push(await executeChatTool(turn, call));
+      }
+
       const continuationPrompt = dependencies.continueWithToolResults(
         serializeToolExecutions(executions),
       );
@@ -367,14 +371,17 @@ export function createChatRuntimeService(
         return currentMessages;
       }
 
+      
+      const strippedFullText = stripToolCalls(fullText, { descriptors: toolDescriptors });
       currentMessages = [
         ...currentMessages,
         {
           role: 'assistant',
-          content: fullText,
+          content: strippedFullText,
           reasoningContent: reasoningAccumulated || result.reasoningText || undefined,
         },
       ];
+
       const toolCalls = extractToolCalls(fullText, { descriptors: toolDescriptors });
       if (toolCalls.length === 0) {
         emitChunk(turn, { text: '', done: true }, excludeTabId);
@@ -383,13 +390,23 @@ export function createChatRuntimeService(
 
       const executions: ToolExecutionRecord[] = [];
       for (const call of toolCalls) executions.push(await executeChatTool(turn, call));
+      
+      let serializedResults = serializeToolExecutions(executions);
+      // DeepSeek Web in expert mode (R1) intercepts raw http:// and https:// URLs in user prompts
+      // and emits "Link reading is unavailable in Expert Mode. Please use Instant Mode."
+      const isWebExpert = await dependencies.getModelType() === 'expert';
+      if (isWebExpert) {
+        serializedResults = serializedResults.replace(/https?:\/\//gi, 'source-url://');
+      }
+
       currentMessages = [
         ...currentMessages,
         {
           role: 'user',
-          content: dependencies.continueWithToolResults(serializeToolExecutions(executions)),
+          content: dependencies.continueWithToolResults(serializedResults),
         },
       ];
+
     }
 
     emitChunk(

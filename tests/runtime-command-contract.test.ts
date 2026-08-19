@@ -35,8 +35,8 @@ const CUTOVER_LEDGER_SECTIONS = [
   ['R3.1 / #351 — Typed seam bootstrap (2)', 2],
   ['R4.1 / #360 — Persistence, library, and local preferences (63)', 63],
   ['R4.2 / #361 — MCP, tool, browser control, and sandbox (32)', 32],
-  ['R4.3 / #362 — DeepSeek, chat, multimodal, and export (16)', 16],
-  ['R4.4 / #363 — Sync, automation, usage, scenario, and lifecycle closure (18)', 18],
+  ['R4.3 / #362 — DeepSeek, chat, multimodal, and export (17)', 17],
+  ['R4.4 / #363 — Sync, automation, usage, scenario, and lifecycle closure (22)', 22],
 ] as const;
 
 describe('runtime command compatibility contract', () => {
@@ -81,10 +81,10 @@ describe('runtime command compatibility contract', () => {
       expect(commands, heading).toHaveLength(count);
       return commands;
     });
-    expect(cutoverLedger).toHaveLength(131);
+    expect(cutoverLedger).toHaveLength(136);
     expect(new Set(cutoverLedger).size).toBe(cutoverLedger.length);
     expectSortedEqual(cutoverLedger, live);
-    expect(registryEntries).toHaveLength(133);
+    expect(registryEntries).toHaveLength(138);
     for (const contract of liveContracts) {
       const registered = RUNTIME_COMMAND_CONTRACTS[contract.type as keyof typeof RUNTIME_COMMAND_CONTRACTS];
       expect(registered.owner).toBe(getRuntimeCommandOwner(contract.type));

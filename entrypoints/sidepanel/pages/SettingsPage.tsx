@@ -7,7 +7,9 @@ import { useSettingsController } from '../controllers/useSettingsController';
 import { useI18n } from '../i18n';
 
 const GeneralSubPage = lazy(() => import('../components/settings/GeneralSubPage'));
+const AskDeepSeekSubPage = lazy(() => import('../components/settings/AskDeepSeekSubPage'));
 const ApiSubPage = lazy(() => import('../components/settings/ApiSubPage'));
+const OpenApiSubPage = lazy(() => import('../components/settings/OpenApiSubPage'));
 const PromptSubPage = lazy(() => import('../components/settings/PromptSubPage'));
 const VoiceSubPage = lazy(() => import('../components/settings/VoiceSubPage'));
 const AppearanceSubPage = lazy(() => import('../components/settings/AppearanceSubPage'));
@@ -16,11 +18,13 @@ const DataSubPage = lazy(() => import('../components/settings/DataSubPage'));
 const ProjectFilesSubPage = lazy(() => import('../components/settings/ProjectFilesSubPage'));
 const AboutSubPage = lazy(() => import('../components/settings/AboutSubPage'));
 
-type SubTab = 'general' | 'api' | 'prompt' | 'voice' | 'appearance' | 'usage' | 'data' | 'projectFiles' | 'about';
+type SubTab = 'general' | 'askDeepSeek' | 'api' | 'openApi' | 'prompt' | 'voice' | 'appearance' | 'usage' | 'data' | 'projectFiles' | 'about';
 
 const SUB_TABS: { key: SubTab; labelKey: LocaleMessageKey }[] = [
   { key: 'general', labelKey: 'sidepanel.settings.tabs.general' },
+  { key: 'askDeepSeek', labelKey: 'sidepanel.settings.tabs.askDeepSeek' },
   { key: 'api', labelKey: 'sidepanel.settings.tabs.api' },
+  { key: 'openApi', labelKey: 'sidepanel.settings.tabs.openApi' },
   { key: 'prompt', labelKey: 'sidepanel.settings.tabs.prompt' },
   { key: 'voice', labelKey: 'sidepanel.settings.tabs.voice' },
   { key: 'appearance', labelKey: 'sidepanel.settings.tabs.appearance' },
@@ -32,7 +36,9 @@ const SUB_TABS: { key: SubTab; labelKey: LocaleMessageKey }[] = [
 
 const SUB_DESCRIPTION_KEY: Record<SubTab, LocaleMessageKey> = {
   general: 'sidepanel.settings.generalDescription',
+  askDeepSeek: 'sidepanel.settings.askDeepSeekDescription',
   api: 'sidepanel.settings.apiDescription',
+  openApi: 'sidepanel.settings.openApiDescription',
   prompt: 'sidepanel.settings.promptDescription',
   voice: 'sidepanel.settings.voiceDescription',
   appearance: 'sidepanel.settings.appearanceDescription',
@@ -70,7 +76,9 @@ export default function SettingsPage() {
         ) : (
           <Suspense fallback={<RouteFallback />}>
             {sub === 'general' && <GeneralSubPage state={state} />}
+            {sub === 'askDeepSeek' && <AskDeepSeekSubPage state={state} onNavigateToAppearance={() => setSub('appearance')} />}
             {sub === 'api' && <ApiSubPage state={state} />}
+            {sub === 'openApi' && <OpenApiSubPage state={state} />}
             {sub === 'prompt' && <PromptSubPage />}
             {sub === 'voice' && <VoiceSubPage />}
             {sub === 'appearance' && <AppearanceSubPage state={state} />}

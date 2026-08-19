@@ -8,7 +8,7 @@
  * cleared when the worker restarts.
  */
 
-export type DiagnosticLogLevel = 'info' | 'warn' | 'error';
+export type DiagnosticLogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export interface DiagnosticLogEntry {
   ts: number;
@@ -19,14 +19,17 @@ export interface DiagnosticLogEntry {
   details?: string;
 }
 
+export type DiagnosticLogListener = (entry: DiagnosticLogEntry) => void;
+
 export interface DiagnosticLogBuffer {
   record(entry: Omit<DiagnosticLogEntry, 'ts'>): void;
   snapshot(): readonly DiagnosticLogEntry[];
   clear(): void;
+  subscribe(listener: DiagnosticLogListener): () => void;
 }
 
-const DEFAULT_MAX_ENTRIES = 1000;
-const DEFAULT_MAX_BYTES = 512 * 1024;
+const DEFAULT_MAX_ENTRIES = 1500;
+const DEFAULT_MAX_BYTES = 1024 * 1024;
 
 export function createDiagnosticLogBuffer(
   maxEntries = DEFAULT_MAX_ENTRIES,
@@ -34,6 +37,7 @@ export function createDiagnosticLogBuffer(
 ): DiagnosticLogBuffer {
   let entries: DiagnosticLogEntry[] = [];
   let totalBytes = 0;
+  const listeners = new Set<DiagnosticLogListener>();
 
   const entrySize = (entry: DiagnosticLogEntry): number =>
     JSON.stringify(entry).length;
@@ -53,6 +57,13 @@ export function createDiagnosticLogBuffer(
       entries.push(stamped);
       totalBytes += entrySize(stamped);
       evict();
+      for (const listener of listeners) {
+        try {
+          listener(stamped);
+        } catch {
+          // Ignore listener errors
+        }
+      }
     },
     snapshot() {
       return [...entries];
@@ -61,8 +72,40 @@ export function createDiagnosticLogBuffer(
       entries = [];
       totalBytes = 0;
     },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
   };
 }
 
-/** Process-wide buffer used by the background tool runtime. */
+/** Process-wide buffer used by the background tool runtime and external API. */
 export const diagnosticLogBuffer = createDiagnosticLogBuffer();
+
+export function logDebug(source: string, message: string, details?: string): void {
+  diagnosticLogBuffer.record({ level: 'debug', source, message, details });
+}
+
+export function logInfo(source: string, message: string, details?: string): void {
+  diagnosticLogBuffer.record({ level: 'info', source, message, details });
+}
+
+export function logWarn(source: string, message: string, details?: string): void {
+  diagnosticLogBuffer.record({ level: 'warn', source, message, details });
+}
+
+export function logError(source: string, message: string, details?: string): void {
+  diagnosticLogBuffer.record({ level: 'error', source, message, details });
+}
+
+let debugModeEnabled = false;
+
+export function isDebugModeEnabled(): boolean {
+  return debugModeEnabled;
+}
+
+export function setDebugModeEnabled(enabled: boolean): void {
+  debugModeEnabled = enabled;
+}

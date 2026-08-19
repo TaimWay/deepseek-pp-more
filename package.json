@@ -1,5 +1,5 @@
 {
-  "name": "deepseek-plus-plus",
+  "name": "deepseek-pp-more",
   "description": "Agentic memory, skills, agentic execution, automation, and MCP tools for DeepSeek",
   "private": true,
   "license": "Apache-2.0",
@@ -21,9 +21,9 @@
     "zip:firefox": "wxt zip --browser firefox --mv3",
     "zip:sources": "node scripts/package-sources.mjs",
     "zip:all": "npm run zip:chrome && npm run zip:edge && npm run zip:firefox && npm run zip:sources",
-    "submit:chrome:dry": "wxt submit --dry-run --chrome-zip dist/deepseek-plus-plus-$npm_package_version-chrome.zip",
-    "submit:chrome:upload": "wxt submit --chrome-zip dist/deepseek-plus-plus-$npm_package_version-chrome.zip --chrome-skip-submit-review",
-    "submit:chrome": "wxt submit --chrome-zip dist/deepseek-plus-plus-$npm_package_version-chrome.zip --chrome-publish-target default",
+    "submit:chrome:dry": "wxt submit --dry-run --chrome-zip dist/deepseek-pp-more-$npm_package_version-chrome.zip",
+    "submit:chrome:upload": "wxt submit --chrome-zip dist/deepseek-pp-more-$npm_package_version-chrome.zip --chrome-skip-submit-review",
+    "submit:chrome": "wxt submit --chrome-zip dist/deepseek-pp-more-$npm_package_version-chrome.zip --chrome-publish-target default",
     "test": "vitest run",
     "compile": "tsc --noEmit",
     "audit:prod": "npm audit --audit-level=high --omit=dev",
@@ -38,6 +38,8 @@
     "verify:i18n": "node scripts/i18n-locale-check.mjs && node scripts/i18n-coverage-audit.mjs",
     "ci:quality": "npm run verify:workflows && npm run audit:prod && npm run prompt:freeze && npm run compile && npm test && npm run verify:persistence-burst && npm run verify:i18n && npm run verify:automation && npm run smoke:mcp && npm run verify:mcp:mock && npm run smoke:shell && npm run smoke:pow && npm run build:all && npm run verify:bundled-skills && npm run verify:sidepanel-chunks && npm run verify:extension-utf8 && npm run verify:manifest-policy && npm run zip:all && npm run verify:release-assets && npm run smoke:pyodide",
     "shell:install": "node scripts/install-shell-host.mjs",
+    "relay:start": "./ext/api-external-relay/target/release/api-external-relay --port 3000",
+    "relay:build": "cargo build --release --manifest-path ext/api-external-relay/Cargo.toml",
     "multimodal:install": "npx --yes deepseek-pp-multimodal-mcp",
     "smoke:pow": "node scripts/pow-smoke.mjs",
     "smoke:web": "node scripts/web-search-smoke.mjs",
@@ -55,6 +57,8 @@
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-markdown": "^10.1.0",
+    "rehype-raw": "^7.0.0",
+    "remark-gfm": "^4.0.1",
     "sucrase": "^3.35.1"
   },
   "devDependencies": {

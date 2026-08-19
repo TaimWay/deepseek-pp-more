@@ -117,7 +117,7 @@ function renderSkillSystemContext(context: string, locale: SupportedLocale): str
 }
 
 export function renderToolSchemas(
-  descriptors?: readonly ToolDescriptor[],
+  descriptors: readonly ToolDescriptor[],
   locale: SupportedLocale = DEFAULT_LOCALE,
 ): string {
   const resolvedDescriptors = descriptors ?? createDefaultToolDescriptors(locale);

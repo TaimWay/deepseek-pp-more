@@ -15,12 +15,17 @@ import {
   createScenarioRuntimeHandlers,
   type ScenarioRuntimeHandlerDependencies,
 } from './scenario-runtime-handlers';
+import {
+  createExternalApiRuntimeHandlers,
+  type ExternalApiRuntimeHandlerDependencies,
+} from './external-api-handlers';
 
 export interface BackgroundRuntimeHandlerDependencies {
   usage: UsageRuntimeHandlerDependencies;
   sync: SyncRuntimeHandlerDependencies;
   automation: AutomationRuntimeHandlerDependencies;
   scenario: ScenarioRuntimeHandlerDependencies;
+  externalApi: ExternalApiRuntimeHandlerDependencies;
 }
 
 export function createBackgroundRuntimeHandlers(
@@ -31,5 +36,6 @@ export function createBackgroundRuntimeHandlers(
     ...createSyncRuntimeHandlers(dependencies.sync),
     ...createAutomationRuntimeHandlers(dependencies.automation),
     ...createScenarioRuntimeHandlers(dependencies.scenario),
+    ...createExternalApiRuntimeHandlers(dependencies.externalApi),
   ]);
 }

@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/readme-header.png" width="860" alt="DeepSeek++ DeepSeek browser extension and AI agent workspace">
+  <img src="assets/readme-header.png" width="860" alt="DeepSeek++ More DeepSeek browser extension and AI agent workspace">
 </p>
 
-<h1 align="center">DeepSeek++</h1>
+<h1 align="center">DeepSeek++ More</h1>
 
 <p align="center">
   <strong>DeepSeek browser extension for a bilingual AI agent workspace with memory, projects, Skills, MCP tools, multimodal media, browser control, saved snippets, artifact downloads, conversation export, and automation.</strong>

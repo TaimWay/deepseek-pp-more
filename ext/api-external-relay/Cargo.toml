@@ -1,0 +1,27 @@
+[package]
+name = "api-external-relay"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.43", features = ["full"] }
+axum = { version = "0.8", features = ["ws", "macros"] }
+tower = { version = "0.5", features = ["util"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+futures-util = "0.3"
+async-stream = "0.3"
+clap = { version = "4.5", features = ["derive", "env"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.11", features = ["v4", "fast-rng"] }
+async-trait = "0.1"
+rcgen = { version = "0.13", optional = true }
+rustls = { version = "0.23", optional = true }
+tokio-rustls = { version = "0.26", optional = true }
+axum-server = { version = "0.7", features = ["tls-rustls"], optional = true }
+
+[features]
+default = ["tls"]
+tls = ["dep:rcgen", "dep:rustls", "dep:tokio-rustls", "dep:axum-server"]

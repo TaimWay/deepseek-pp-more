@@ -139,6 +139,96 @@ const lineAllowlist = [
     includes: "'财务', '新闻', '报告'",
     reason: 'generic two-character Chinese stop-words used for weak-query down-weighting (source-authored linguistic scoring data, not UI text)',
   },
+  {
+    path: 'core/external-api/service.ts',
+    includes: '请查看并详细分析上传的图片与文件内容',
+    reason: 'fallback prompt for multimodal file uploads when user message is empty in web session',
+  },
+  {
+    path: 'entrypoints/background.ts',
+    includes: '问问 DeepSeek：选中文本',
+    reason: 'context menu title for selection ask in background service worker',
+  },
+  {
+    path: 'entrypoints/background.ts',
+    includes: '问问 DeepSeek：解释此网页',
+    reason: 'context menu title for page ask in background service worker',
+  },
+  {
+    path: 'entrypoints/background.ts',
+    includes: '当前网页',
+    reason: 'fallback page title for context menu action prompt in background service worker',
+  },
+  {
+    path: 'entrypoints/background.ts',
+    includes: '请阅读并详细解释当前网页',
+    reason: 'page explanation prompt in background service worker',
+  },
+  {
+    path: 'entrypoints/background.ts',
+    includes: '请针对以上选中文本进行详细解析和解答',
+    reason: 'selection explanation prompt in background service worker',
+  },
+  {
+    path: 'entrypoints/background.ts',
+    includes: '语言回复要求',
+    reason: 'language consistency instruction injected into external API prompt to prevent English output for Chinese input',
+  },
+  {
+    path: 'entrypoints/content/adapters/chat-launcher.ts',
+    includes: '问问 DeepSeek',
+    reason: 'floating chat launcher button title and hover tooltip',
+  },
+  {
+    path: 'entrypoints/content/adapters/chat-launcher.ts',
+    includes: '帮你解释网站',
+    reason: 'floating chat launcher idle suggestion speech bubbles',
+  },
+  {
+    path: 'entrypoints/content/adapters/chat-launcher.ts',
+    includes: '点我询问',
+    reason: 'floating chat launcher idle suggestion speech bubbles',
+  },
+  {
+    path: 'entrypoints/content/adapters/chat-launcher.ts',
+    includes: '有什么想聊的吗？',
+    reason: 'floating chat launcher idle suggestion speech bubbles',
+  },
+  {
+    path: 'entrypoints/content/adapters/chat-launcher.ts',
+    includes: '点击开启快捷问答',
+    reason: 'floating chat launcher idle suggestion speech bubbles',
+  },
+  {
+    path: 'entrypoints/content.ts',
+    includes: 'button[aria-label*="上传"]',
+    reason: 'DeepSeek DOM upload button selector',
+  },
+  {
+    path: 'entrypoints/content.ts',
+    includes: '联网搜索 (扩展)',
+    reason: 'input toolbox extension search toggle chip',
+  },
+  {
+    path: 'entrypoints/content.ts',
+    includes: '启用扩展联网搜索增强',
+    reason: 'input toolbox extension search tooltip',
+  },
+  {
+    path: 'entrypoints/content.ts',
+    includes: '允许调用 Agent Call',
+    reason: 'input toolbox agent call toggle button and tooltip',
+  },
+  {
+    path: 'entrypoints/content.ts',
+    includes: '记忆管理',
+    reason: 'input toolbox memory management button and tooltip',
+  },
+  {
+    path: 'entrypoints/content.ts',
+    includes: '问问 DeepSeek',
+    reason: 'in-page pet hover tooltip',
+  },
 ];
 
 assertDeterministicKeyChecks();

@@ -1,22 +1,22 @@
 <p align="center">
-  <img src="assets/readme-header.png" width="860" alt="DeepSeek++ DeepSeek 浏览器插件和 AI Agent 工作台">
+  <img src="assets/readme-header.png" width="860" alt="DeepSeek++ More DeepSeek 浏览器插件和 AI Agent 工作台">
 </p>
 
-<h1 align="center">DeepSeek++</h1>
+<h1 align="center">DeepSeek++ More</h1>
 
 <p align="center">
-  <strong>DeepSeek++：把 DeepSeek 网页版扩展成支持中英文体验、记忆、项目、Skill、MCP、多模态媒体、浏览器控制、保存项、产物下载、对话导出和自动化的 AI Agent 工作台</strong>
-</p>
-
-<p align="center">
-  <a href="https://github.com/zhu1090093659/deepseek-pp/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/zhu1090093659/deepseek-pp?style=flat-square"></a>
-  <a href="https://github.com/zhu1090093659/deepseek-pp/watchers"><img alt="Watchers" src="https://img.shields.io/github/watchers/zhu1090093659/deepseek-pp?style=flat-square"></a>
-  <a href="https://github.com/zhu1090093659/deepseek-pp/network/members"><img alt="Forks" src="https://img.shields.io/github/forks/zhu1090093659/deepseek-pp?style=flat-square"></a>
-  <a href="https://github.com/zhu1090093659/deepseek-pp/issues"><img alt="Issues" src="https://img.shields.io/github/issues/zhu1090093659/deepseek-pp?style=flat-square"></a>
+  <strong>DeepSeek++ More：把 DeepSeek 网页版扩展成支持中英文体验、记忆、项目、Skill、MCP、多模态媒体、浏览器控制、保存项、产物下载、开放 API、对话导出和自动化的优化 AI Agent 工作台</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/zhu1090093659/deepseek-pp/releases"><img alt="Release" src="https://img.shields.io/github/v/release/zhu1090093659/deepseek-pp?style=flat-square&label=release"></a>
+  <a href="https://github.com/TaimWay/deepseek-pp-more/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/TaimWay/deepseek-pp-more?style=flat-square"></a>
+  <a href="https://github.com/TaimWay/deepseek-pp-more/watchers"><img alt="Watchers" src="https://img.shields.io/github/watchers/TaimWay/deepseek-pp-more?style=flat-square"></a>
+  <a href="https://github.com/TaimWay/deepseek-pp-more/network/members"><img alt="Forks" src="https://img.shields.io/github/forks/TaimWay/deepseek-pp-more?style=flat-square"></a>
+  <a href="https://github.com/TaimWay/deepseek-pp-more/issues"><img alt="Issues" src="https://img.shields.io/github/issues/TaimWay/deepseek-pp-more?style=flat-square"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/TaimWay/deepseek-pp-more/releases"><img alt="Release" src="https://img.shields.io/github/v/release/TaimWay/deepseek-pp-more?style=flat-square&label=release"></a>
   <a href="https://chromewebstore.google.com/detail/deepseek++/kdmpkkahkhdmdhfkdihkopikgcocbpbf?hl=zh-CN"><img alt="Chrome Web Store" src="https://img.shields.io/badge/Chrome%20Web%20Store-available-16a34a?style=flat-square"></a>
   <a href="#license"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-2563eb?style=flat-square"></a>
   <a href="https://chat.deepseek.com"><img alt="DeepSeek" src="https://img.shields.io/badge/DeepSeek-web-4f46e5?style=flat-square"></a>
@@ -39,6 +39,19 @@ DeepSeek++ 是面向 [DeepSeek](https://chat.deepseek.com) 网页版的开源浏
 如果你在寻找 DeepSeek Chrome extension、DeepSeek MCP tools、DeepSeek memory plugin、DeepSeek conversation export 或 DeepSeek AI agent，DeepSeek++ 对应的是同一个本地优先的 DeepSeek 浏览器增强工作台。
 
 语言可设为跟随浏览器、简体中文或 English。DeepSeek++ 会让侧边栏、右键菜单、工具结果、内置 Skill 行为和自动续跑提示保持一致语言，同时保留用户自己写的记忆、预设、自定义 Skill、自动化任务和同步数据原文。
+
+DeepSeek++ More 是一个相对于原版而言更加激进的项目，它提供了开放 API 以供外部 AI 软件通过扩展中转使用 OpenAI 格式的 API 直接调用网页免费 API，只需一个浏览器，就能把他接入到其他 Agent 里（不过还是推荐干一些小活）。
+
+
+## 🔥 DeepSeek++ More 独占特性
+
+由于本项目是基于原版 `DeepSeek++` 的激进增强分支（Fork），我们在原版强大的“工具执行与记忆”底座上，新增了以下独家功能：
+
+- **OpenAI 兼容中转（API Relay）**：内置并打包了 HTTP/WebSocket 中转服务器。你可以让任何支持 OpenAI 接口格式的外部软件（如其他 Agent、IDE 插件），无缝白嫖 DeepSeek 网页版的强大推理能力。
+- **全网右键唤起**：任何页面选中文字，一键右键“问问 DeepSeek”或者直接唤出侧边栏悬浮面板，彻底打破对话窗口的边界。
+- **极致的沉浸式对话 UI**：剥离并隐藏了烦人的底层 XML 工具调用标签，重新设计了清爽的 `> 正在执行操作: [工具名]...` 状态指示器；支持 Github Flavored Markdown（原生表格与 HTML）渲染。
+- **深度模式防火墙突围**：原版 DeepSeek Web 会在 Expert 模式下粗暴屏蔽外部 `http/https` 链接。本项目独家实现了底层链接混淆与协议转义，在工具抓取网页后能完美将结果喂给模型，摆脱降智拦截。
+- **跨平台一键部署包**：发布了专属的 `deepseek-ppmore-ext-apirelay` NPM 包，Windows/Mac/Linux 均可通过一条命令全自动拉起 Native Host 与 Relay 守护进程，并在扩展设置页提供实时的 PID 与可视化连通性监控。
 
 ## 目录
 
@@ -69,6 +82,7 @@ DeepSeek++ 是面向 [DeepSeek](https://chat.deepseek.com) 网页版的开源浏
 | DeepSeek prompt controls / 提示词控制 | 控制记忆、系统提示词、预设注入频率和回复语言，适合在不同任务之间快速切换。 |
 | DeepSeek automation / 自动化任务 | 把固定任务放入独立 DeepSeek 会话，支持立即运行、定时触发、状态追踪和手动停止。 |
 | DeepSeek web search / 网页获取 | 在需要实时信息或指定网页内容时搜索互联网、读取网页文本，并继续生成最终回答。 |
+| DeepSeek Open API / 开放 API| 将网页免费 API 通过本地 OpenAI API 接入到外部 AI 工具里，就像是 DeepSeek API，但是依赖于网页，只需要后台挂载浏览器 |
 
 ## 适合场景
 
@@ -80,6 +94,7 @@ DeepSeek++ 是面向 [DeepSeek](https://chat.deepseek.com) 网页版的开源浏
 - 希望把项目背景、个人偏好、常用工作流和文档处理能力沉淀为长期记忆与可复用 Skill。
 - 希望把自己的 DeepSeek 对话记录本地备份为可读文件，便于归档、迁移或后续检索。
 - 希望让 DeepSeek 处理需要多步工具执行、联网搜索、网页读取或定时跟踪的任务。
+- 希望临时使用免费 DeepSeek 救急，接入 Agent 完成未能完成的项目
 
 ## 核心功能
 
@@ -95,6 +110,7 @@ DeepSeek++ 是面向 [DeepSeek](https://chat.deepseek.com) 网页版的开源浏
 - **识图图片附件** — 识图模式下可主动选择或粘贴图片，图片只会在用户发送本次消息时进入 DeepSeek 对话
 - **独立新会话** — 侧边栏对话支持新建会话，减少和当前页面已有对话互相干扰
 - **流式展示** — 回复会在侧边栏内持续渲染，登录状态缺失时会提示先回到 DeepSeek 页面完成登录
+- **开放 API** — 只需进行一次简单的部署，就能得到非常强大的 API，只需要你的网页账户，完全免费
 
 ### 中英文体验
 
@@ -307,7 +323,7 @@ npm run shell:install -- --browser chrome --extension-id <扩展ID>
 
 ## 1.14.0 变更回顾
 
-1.14.0 是内联智能体交付体验升级与流式稳定性修复版本：最终回答与图表、代码产物改由 DeepSeek 原生渲染，推理过程分步展示，流式传输与代码块渲染更稳定。
+1.14.0 是内联智能体交互与系统整合升级版本：不仅提升了原生流式渲染稳定性，还重构了本地 API 中转与 Native Host 安装体验，强化了右键快捷提问，并在侧边栏对话中彻底隐藏工具 XML 标签以增强沉浸感。
 
 | 方向 | 主要变化 |
 |------|----------|
@@ -317,6 +333,10 @@ npm run shell:install -- --browser chrome --extension-id <扩展ID>
 | 授权 | 原生 regenerate 工具调用授权修复，仅成功执行过的调用作为授权证据。 |
 | 侧边栏 | 网页流式推理过程转发到侧边栏对话展示。 |
 | 权限变化 | Chrome、Edge 和 Firefox 均不新增浏览器权限。 |
+| 开放 API 与中转 | 新增跨平台 NPM 包 `deepseek-ppmore-ext-apirelay`，一键安装 Native Host 与 API 中转服务器；彻底修复中转守护进程 PID 误判与轮回重启 BUG；UI 新增安装向导、连接状态指示与自动刷新。 |
+| 快捷提问 (Ask) | 修复全局右键菜单“问问 DeepSeek”的触发逻辑限制；支持直接唤起对话面板；增强外部页面调用的工具过滤。 |
+| UI 体验增强 | 侧边栏对话流式输出彻底过滤工具执行的丑陋 XML 标签；新增精美的 `> 正在执行操作: [工具名]...` 执行指示器；支持 Github Flavored Markdown（表格、HTML标签）原生渲染。 |
+| 联网与突破 | 针对“深度思考模式（Expert Mode）”屏蔽网址链接的限制，在工具回传阶段实现 `http/https` 协议嗅探与自动转义，完美规避官方防火墙阻断。 |
 
 <details>
 <summary>展开历史版本变更回顾（1.13.1 - 0.2.0）</summary>
@@ -1098,7 +1118,7 @@ Chrome 用户可以直接从 [Chrome Web Store](https://chromewebstore.google.co
 ### 从源码构建
 
 ```bash
-git clone https://github.com/zhu1090093659/deepseek-pp.git
+git clone https://github.com/TaimWay/deepseek-pp-more.git
 cd deepseek-pp
 npm install
 npm run build

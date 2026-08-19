@@ -30,6 +30,24 @@ const labels: ProjectSidebarOrganizerLabels = {
   untitledConversation: '未命名对话',
   operationFailed: (message) => `项目操作失败：${message}`,
   age: (timestamp) => `${Math.floor((NOW - timestamp) / 60000)} 分`,
+  externalApiTitle: '外部 API 会话',
+  batchManage: '☑ 批量管理',
+  exitBatchManage: '✕ 退出',
+  batchConfirmDelete: (count) => `确定删除选中的 ${count} 个会话？`,
+  batchConfirmSub: '此操作将永久删除 DeepSeek 云端会话记录。',
+  batchDeleting: '正在删除...',
+  confirmDelete: '确定删除',
+  cancel: '取消',
+  selectedCount: (count) => `已选 ${count} 项`,
+  batchDelete: '🗑 批量删除',
+  selectAll: '全选所有',
+  unselectAll: '取消全选',
+  selectExternal: (count) => `⚡ 选外部 (${count})`,
+  expandExternalApi: '展开外部 API 会话',
+  collapseExternalApi: '收起外部 API 会话',
+  noExternalSessions: '暂无外部会话（外部调用时自动归入）',
+  deleteExternalSession: '删除此外部会话',
+  testBadge: '测试',
 };
 
 let sendMessage: ReturnType<typeof vi.fn>;
@@ -555,6 +573,87 @@ describe('DeepSeek project sidebar organizer', () => {
 
     expanded?.querySelector<HTMLButtonElement>('[data-dpp-project-show-all]')?.click();
     expect(onToggleShowAll).toHaveBeenCalledWith('project-deepseek');
+  });
+
+  it('renders external API sessions in a dedicated folder and hides them from the standard history list', () => {
+    const state = createProjectState({ conversations: [] });
+    mountHistoryDom();
+
+    const externalSessions = [
+      {
+        chatSessionId: 'session-two',
+        sessionKey: 'system-post',
+        title: '测试系统提示词会话',
+        createdAt: NOW - 50_000,
+        lastUsedAt: NOW - 10_000,
+        messageCount: 1,
+        model: 'deepseek-v4-flash',
+      },
+    ];
+
+    const section = renderProjectSidebar(document, createRenderOptions({
+      state,
+      externalSessions,
+      expandedExternalSection: true,
+    }));
+
+    expect(section?.querySelector('.dpp-project-sidebar__external-block')).not.toBeNull();
+    expect(section?.textContent).toContain('外部 API 会话');
+    expect(section?.querySelector('[data-dpp-project-conversation-id="session-two"]')?.textContent)
+      .toContain('测试系统提示词会话');
+    // Verify session-two is hidden from the standard history list
+    expect(document.querySelector<HTMLElement>('[data-testid="session-two-row"]')?.hidden).toBe(true);
+    expect(document.querySelector<HTMLElement>('[data-testid="session-two-row"]')?.style.getPropertyValue('display'))
+      .toBe('none');
+  });
+
+  it('renders batch toolbar and indicators when batch mode is active', () => {
+    const state = createProjectState();
+    mountHistoryDom();
+
+    const externalSessions = [
+      {
+        chatSessionId: 'session-external-1',
+        sessionKey: 'system-post',
+        title: 'system-post',
+        createdAt: NOW,
+        lastUsedAt: NOW,
+        messageCount: 1,
+        model: 'deepseek-v4-flash',
+      },
+    ];
+
+    const onToggleBatchMode = vi.fn();
+    const onBatchSelectAll = vi.fn();
+    const onBatchSelectExternal = vi.fn();
+    const onStartBatchDelete = vi.fn();
+
+    const section = renderProjectSidebar(document, {
+      ...createRenderOptions({ state }),
+      batchMode: true,
+      selectedSessionIds: new Set(['session-two']),
+      externalSessions,
+      onToggleBatchMode,
+      onBatchSelectAll,
+      onBatchSelectExternal,
+      onStartBatchDelete,
+    });
+
+    expect(section?.querySelector('.dpp-batch-toolbar')).not.toBeNull();
+    expect(section?.querySelector('.dpp-batch-count')?.textContent).toContain('已选 1 项');
+    expect(document.querySelector('.dpp-batch-checkbox-indicator')).not.toBeNull();
+
+    // Test select-all button
+    section?.querySelector<HTMLButtonElement>('[data-batch-action="toggle-all"]')?.click();
+    expect(onBatchSelectAll).toHaveBeenCalledTimes(1);
+
+    // Test select-external button
+    section?.querySelector<HTMLButtonElement>('[data-batch-action="select-external"]')?.click();
+    expect(onBatchSelectExternal).toHaveBeenCalledTimes(1);
+
+    // Test start-delete button
+    section?.querySelector<HTMLButtonElement>('[data-batch-action="start-delete"]')?.click();
+    expect(onStartBatchDelete).toHaveBeenCalledTimes(1);
   });
 });
 

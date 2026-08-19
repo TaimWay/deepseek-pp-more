@@ -9,6 +9,7 @@ import {
   archiveStaleMemories,
 } from '../core/memory/store';
 import { filterMemoriesByProjectScope } from '../core/memory/scope';
+import { selectMemories, estimateTokens, getMemoryBudget } from '../core/memory/selector';
 import {
   getAllSkillSources,
   getAllSkills,
@@ -183,6 +184,7 @@ import {
   saveScenario,
 } from '../core/scenario/store';
 import { getChatEnabled } from '../core/chat/store';
+import { getAskDeepSeekSettings } from '../core/ask-deepseek/store';
 import { pendingChatTextStore } from '../core/chat/pending-text';
 import {
   markChatLoopFinished,
@@ -221,6 +223,7 @@ import {
 } from '../core/automation/scheduler';
 import {
   createChatSession,
+  deleteChatSession,
   createPowHeadersForPath,
   createPowHeaders,
   DEEPSEEK_FILE_UPLOAD_PATH,
@@ -235,7 +238,7 @@ import {
   buildConversationExportArtifactsCancellable,
   runConversationExport,
 } from '../core/export/service';
-import { buildPromptAugmentation } from '../core/prompt';
+import { buildPromptAugmentation, renderToolSchemas } from '../core/prompt';
 import {
   broadcastRuntimeUpdate,
   deliverRuntimeMessageBestEffort,
@@ -264,10 +267,27 @@ import {
   type ChatPromptBuildRequest,
 } from './background/chat-runtime-service';
 import { createDeepSeekRuntimeHandlers } from './background/deepseek-runtime-handlers';
+import {
+  analyzeMultimodalMedia,
+  type MultimodalRuntimeHandlerDependencies,
+} from './background/multimodal-handlers';
 import { createBackgroundRuntimeHandlers } from './background/background-runtime-handlers';
 import { refreshRuntimeMessageContextFromBrowserTab } from './background/runtime-message-context';
 import { refreshDeepSeekAuthFromTabs } from './background/deepseek-auth-refresh';
-import { createSyncRuntimeService } from './background/sync-runtime-service';
+import {
+  createSyncRuntimeService,
+} from './background/sync-runtime-service';
+import {
+  convertClientToolsToDescriptors,
+  createExternalApiService,
+  getExternalApiConfig,
+  getExternalApiSessions,
+  removeExternalApiSessions,
+  saveExternalApiConfig,
+  type ExternalApiConfig,
+  type ExternalApiStatus,
+  type ExternalApiToolDefinition,
+} from '../core/external-api';
 import {
   createTranslator,
   DEFAULT_LOCALE,
@@ -313,7 +333,11 @@ let currentBackgroundLocale: SupportedLocale = DEFAULT_LOCALE;
 let currentBackgroundTranslator = createTranslator(DEFAULT_LOCALE);
 let sandboxOffscreenCreation: Promise<void> | null = null;
 const chatRuntimeService = createChatRuntimeService({
-  getChatEnabled,
+  getChatEnabled: async () => {
+    const floatingEnabled = await getChatEnabled();
+    const askSettings = await getAskDeepSeekSettings();
+    return floatingEnabled || askSettings.enabled;
+  },
   getDeepSeekApiKey,
   getOfficialApiChatConfig,
   loadClientHeaders: loadOrRefreshClientHeaders,
@@ -401,6 +425,68 @@ const syncOperationCoordinator = createSyncOperationCoordinator(syncConfigStore,
   download: syncRuntimeService.download,
   authorizationNotRequiredMessage: () => backgroundT('background.sync.authorizationNotRequired'),
 });
+const multimodalHandlerDependencies: MultimodalRuntimeHandlerDependencies = {
+  getSettingsStatus: getMultimodalSettingsStatus,
+  saveSettings: saveMultimodalSettings,
+  clearSettings: clearMultimodalSettings,
+  getMcpServers: () => getAllMcpServers({ includeSecrets: false }),
+  executeToolCall: (call, options) => executeBackgroundRuntimeToolCall(
+    call,
+    'manual_chat',
+    options,
+  ),
+  broadcastToolCallHistoryUpdate,
+};
+
+const externalApiService = createExternalApiService({
+  getConfig: getExternalApiConfig,
+  getDeepSeekApiKey,
+  loadClientHeaders: loadOrRefreshClientHeaders,
+  createChatSession: (headers, signal) => createChatSession(headers, signal),
+  createPowHeaders: (headers, signal) => createPowHeaders(headers, undefined, signal),
+  uploadFile: uploadDeepSeekFile,
+  analyzeMultimodalMedia: (request) => analyzeMultimodalMedia(request, multimodalHandlerDependencies),
+  submitWebPrompt: submitPromptStreaming,
+  submitOfficialPrompt: submitOfficialDeepSeekStreaming,
+  buildPrompt: buildExternalApiPrompt,
+  executeToolCall: (call, options) =>
+    executeBackgroundRuntimeToolCall(call, 'external_api', options),
+  getToolDescriptors: () =>
+    getPromptToolDescriptors(currentBackgroundLocale, 'external_api'),
+  continueWithToolResults: (toolResults) =>
+    backgroundT('background.chat.continueWithToolResults', { toolResults }),
+  onStatusChange: (status: ExternalApiStatus) => {
+    void broadcastExternalApiStatusUpdate(status);
+  },
+  reportError: reportBackgroundStartupError,
+});
+
+async function deleteDeepSeekSessions(sessionIds: string[]): Promise<{ ok: true; deletedCount: number; failedIds?: string[] }> {
+  let headers: Record<string, string> = {};
+  try {
+    const loaded = await loadOrRefreshClientHeaders();
+    if (loaded) headers = loaded;
+  } catch {
+    headers = {};
+  }
+  let deletedCount = 0;
+  const failedIds: string[] = [];
+  for (const sessionId of sessionIds) {
+    try {
+      const ok = await deleteChatSession(sessionId, headers);
+      if (ok) {
+        deletedCount++;
+      } else {
+        failedIds.push(sessionId);
+      }
+    } catch {
+      failedIds.push(sessionId);
+    }
+  }
+  await removeExternalApiSessions(sessionIds);
+  return { ok: true, deletedCount, failedIds: failedIds.length > 0 ? failedIds : undefined };
+}
+
 const SANDBOX_OFFSCREEN_URL = 'sandbox-offscreen.html';
 const browserSandboxRuntime: SandboxToolRuntime = {
   runSandbox: (request) => runBrowserSandboxToolResult(request),
@@ -602,22 +688,12 @@ const runtimeCommandRegistry = createRuntimeCommandRegistry({
         getChatAuthStatus,
         broadcastChatAuthStatus,
       },
-      multimodal: {
-        getSettingsStatus: getMultimodalSettingsStatus,
-        saveSettings: saveMultimodalSettings,
-        clearSettings: clearMultimodalSettings,
-        getMcpServers: () => getAllMcpServers({ includeSecrets: false }),
-        executeToolCall: (call, options) => executeBackgroundRuntimeToolCall(
-          call,
-          'manual_chat',
-          options,
-        ),
-        broadcastToolCallHistoryUpdate,
-      },
+      multimodal: multimodalHandlerDependencies,
       chat: {
         service: chatRuntimeService,
         getOfficialApiChatConfig,
         saveOfficialApiChatConfig,
+        deleteSessions: deleteDeepSeekSessions,
       },
       conversationExport: {
         baseUrl: new URL(DEEPSEEK_HOME_URL).origin,
@@ -670,6 +746,20 @@ const runtimeCommandRegistry = createRuntimeCommandRegistry({
         deleteScenario,
         refreshScenarioMenus: createContextMenus,
       },
+      externalApi: {
+        getConfig: getExternalApiConfig,
+        saveConfig: async (config) => {
+          const saved = await saveExternalApiConfig(config);
+          await externalApiService.handleConfigUpdated(saved);
+          return saved;
+        },
+        reconnect: () => externalApiService.reconnect(),
+        getStatus: () => externalApiService.getStatus(),
+        notifyStatusChanged: (status) => {
+          void broadcastExternalApiStatusUpdate(status);
+        },
+        getSessions: getExternalApiSessions,
+      },
     }),
   ],
 });
@@ -702,6 +792,13 @@ type ActionApi = {
   setBadgeBackgroundColor?: (details: { color: string }) => Promise<void> | void;
 };
 
+
+async function isAnyChatEnabled(): Promise<boolean> {
+  const floatingEnabled = await getChatEnabled();
+  const askSettings = await getAskDeepSeekSettings();
+  return floatingEnabled || askSettings.enabled;
+}
+
 export default defineBackground(() => {
   void syncLocalRecoveryBarrier.ensureReady().catch(acknowledgeReportedSyncRecoveryFailure);
   enableSidePanelActionClick();
@@ -730,6 +827,8 @@ export default defineBackground(() => {
   ensureAutomationWakeAlarm().catch((error) => reportBackgroundStartupError('automation_alarm_create_failed', error));
   chatRuntimeService.reconcileInterruptedOnWake()
     .catch((error) => reportBackgroundStartupError('chat_loop_reconcile_failed', error));
+  externalApiService.start()
+    .catch((error) => reportBackgroundStartupError('external_api_start_failed', error));
   syncLocalRecoveryBarrier.ensureReady()
     .then(() => scanDueAutomationsFromWake()
       .catch((error) => reportBackgroundStartupError('automation_startup_scan_failed', error)))
@@ -785,6 +884,7 @@ export default defineBackground(() => {
 function registerAutomationAlarmListener() {
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== AUTOMATION_WAKE_ALARM_NAME) return;
+    externalApiService.ensureConnected().catch(() => {});
     syncLocalRecoveryBarrier.ensureReady()
       .then(() => scanDueAutomationsFromWake()
         .catch((error) => reportBackgroundStartupError('automation_alarm_scan_failed', error)))
@@ -857,19 +957,31 @@ async function refreshWhatsNewBadge() {
 }
 
 async function createContextMenus() {
-  const chatEnabled = await getChatEnabled();
+  const chatEnabled = await isAnyChatEnabled();
   if (!chatEnabled) {
     await chrome.contextMenus.removeAll();
     return;
   }
-  const apiKeyConfigured = await hasDeepSeekApiKey();
-  const menuScope = apiKeyConfigured
-    ? {}
-    : { documentUrlPatterns: [DEEPSEEK_TAB_URL_PATTERN] };
+    const apiKeyConfigured = await hasDeepSeekApiKey();
+  const menuScope = {};
   const scenarios = await getAllScenarios();
   const enabledScenarios = scenarios.filter((s) => s.enabled);
 
   await chrome.contextMenus.removeAll();
+
+  chrome.contextMenus.create({
+    id: 'ask-deepseek-selection',
+    title: currentBackgroundLocale === 'zh-CN' ? '问问 DeepSeek："%s"' : 'Ask DeepSeek: "%s"',
+    contexts: ['selection'],
+    ...menuScope,
+  });
+
+  chrome.contextMenus.create({
+    id: 'ask-deepseek-page',
+    title: currentBackgroundLocale === 'zh-CN' ? '问问 DeepSeek：解释此网页' : 'Ask DeepSeek: Explain Page',
+    contexts: ['page'],
+    ...menuScope,
+  });
 
   chrome.contextMenus.create({
     id: 'send-to-chat',
@@ -902,10 +1014,6 @@ function registerContextMenuClickListener(): void {
     info: chrome.contextMenus.OnClickData,
     tab?: chrome.tabs.Tab,
   ) => {
-    if (!info.selectionText) return;
-    const selectedText = info.selectionText.trim();
-    if (!selectedText) return;
-
     // Open the sidepanel before async boundaries so the user gesture remains valid.
     const tabId = tab?.id;
     if (tabId && chrome.sidePanel?.open) {
@@ -913,8 +1021,31 @@ function registerContextMenuClickListener(): void {
         .catch((error) => reportBackgroundStartupError('context_menu_sidepanel_open_failed', error));
     }
 
-    const chatEnabled = await getChatEnabled();
+    const chatEnabled = await isAnyChatEnabled();
     if (!chatEnabled) return;
+
+    if (info.menuItemId === 'ask-deepseek-page') {
+      const pageTitle = tab?.title || '当前网页';
+      const pageUrl = tab?.url || '';
+      const prompt = currentBackgroundLocale === 'zh-CN'
+        ? `请阅读并详细解释当前网页《${pageTitle}》(${pageUrl}) 的核心内容与关键要点。`
+        : `Please examine and explain the key points of the webpage "${pageTitle}" (${pageUrl}).`;
+      openSidePanelAndSendText(prompt)
+        .catch((error) => reportBackgroundStartupError('pending_chat_text_write_failed', error));
+      return;
+    }
+
+    if (!info.selectionText) return;
+    const selectedText = info.selectionText.trim();
+    if (!selectedText) return;
+
+    if (info.menuItemId === 'ask-deepseek-selection') {
+      const pageTitle = tab?.title ? ` [Source: ${tab.title}]` : '';
+      const snippet = `\`\`\`text${pageTitle}\n${selectedText}\n\`\`\`\n\n请针对以上选中文本进行详细解析和解答。`;
+      openSidePanelAndSendText(snippet)
+        .catch((error) => reportBackgroundStartupError('pending_chat_text_write_failed', error));
+      return;
+    }
 
     if (info.menuItemId === 'send-to-chat') {
       openSidePanelAndSendText(selectedText)
@@ -999,6 +1130,17 @@ async function handleMessage(
   message: RuntimeMessageEnvelope,
   context: RuntimeMessageContext,
 ) {
+  if (message.type === 'OPEN_CHAT_WITH_TEXT') {
+    const text = (message as any).text ?? (message.payload as any)?.text ?? '';
+    if (context.tabId && chrome.sidePanel?.open) {
+      chrome.sidePanel.open({ tabId: context.tabId })
+        .catch((error) => reportBackgroundStartupError('sidepanel_open_failed', error));
+    }
+    if (text) {
+      await openSidePanelAndSendText(text);
+    }
+    return { ok: true };
+  }
   return runtimeCommandRegistry.dispatch(message, context);
 }
 
@@ -1238,6 +1380,10 @@ async function broadcastConversationExportProgress(
   excludeTabId?: number,
 ) {
   await broadcastToTabs({ type: 'DEEPSEEK_EXPORT_PROGRESS', progress }, excludeTabId);
+}
+
+async function broadcastExternalApiStatusUpdate(status: ExternalApiStatus, excludeTabId?: number) {
+  await broadcastToTabs({ type: 'EXTERNAL_API_STATUS_UPDATED', status }, excludeTabId);
 }
 
 async function executeBackgroundRuntimeToolCall(
@@ -1544,6 +1690,77 @@ async function buildSidepanelPrompt(request: ChatPromptBuildRequest): Promise<{
     forceResponseLanguage: promptSettings.forceResponseLanguage === 'auto' ? null : promptSettings.forceResponseLanguage,
   });
 
+  return { augmented, enabledDescriptors };
+}
+
+async function buildExternalApiPrompt(request: {
+  prompt: string;
+  isFirstMessage: boolean;
+  messageCount: number;
+  allowAgentTools?: boolean;
+  injectSystemInfo?: boolean;
+  enableMemory?: boolean;
+  effectiveModel?: string;
+  clientTools?: ExternalApiToolDefinition[];
+}): Promise<{
+  augmented: string;
+  enabledDescriptors: ToolDescriptor[];
+}> {
+  const allowTools = request.allowAgentTools !== false;
+  let enabledDescriptors: ToolDescriptor[] = [];
+  let toolsContext = '';
+  let agentInstruction = '';
+
+  if (allowTools) {
+    const toolDescriptors = await getRuntimeToolDescriptors(currentBackgroundLocale);
+    const sidepanelDescriptors = filterSidepanelChatToolDescriptors(toolDescriptors);
+    enabledDescriptors = filterRetiredModelFacingTools(sidepanelDescriptors);
+    const clientDescriptors = convertClientToolsToDescriptors(request.clientTools);
+    const renderDescriptors = [...enabledDescriptors, ...clientDescriptors];
+    if (renderDescriptors.length > 0) {
+      toolsContext = renderToolSchemas(renderDescriptors, currentBackgroundLocale);
+      const toolNames = renderDescriptors.map((d) => d.name).join(', ');
+      agentInstruction = `[Agent Capabilities & Instructions]\nYou are an advanced AI assistant equipped with Agent Call capabilities.\nYou have access to external tools and functions (${toolNames}) listed below.\nWhen answering queries that require real-time information (e.g. web search), browsing, file operations, calculations, or execution, you MUST invoke tools using their exact XML tag format: <tool_name>{"param": "value"}</tool_name>.\nDo NOT state that you cannot search the web or execute operations when the corresponding tool is available. The system will execute your tool call and return the results for you to formulate your final answer.\n\n`;
+    }
+  }
+
+  const promptSettings = await getPromptInjectionSettings();
+  let memoryContext = '';
+  const memoryAllowed = request.enableMemory ?? promptSettings.memoryEnabled;
+  if (memoryAllowed) {
+    const allMemories = await getAllMemories();
+    const activeMemories = allMemories.filter((m) => m.scope !== 'project');
+    if (activeMemories.length > 0 && request.prompt.trim()) {
+      const promptTokens = estimateTokens(request.prompt);
+      const budget = getMemoryBudget(promptTokens);
+      const selected = selectMemories(request.prompt, [...activeMemories], { budget });
+      if (selected.length > 0) {
+        memoryContext = `[Relevant Memories]:\n${selected.map((m) => `- ${m.content}`).join('\n')}\n\n`;
+      }
+    }
+  }
+
+  let systemInfoContext = '';
+  if (request.injectSystemInfo !== false) {
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const modelDesc = request.effectiveModel || 'DeepSeek';
+    systemInfoContext = `[Environment Context]\n- Current Time: ${timeStr}\n- Target Model: ${modelDesc}\n\n`;
+  }
+
+  const isChinesePrompt = /[\u4e00-\u9fa5]/.test(request.prompt) || currentBackgroundLocale === 'zh-CN';
+  const languageInstruction = isChinesePrompt
+    ? `[语言回复要求 / Language Instruction]\n用户使用中文进行提问或包含中文内容。你必须始终使用中文进行分析、总结与回答，不得自动切换为英文。\n\n`
+    : `[Language Instruction]\nAlways reply in the user's inquiry language.\n\n`;
+
+  let prefix = '';
+  if (languageInstruction) prefix += languageInstruction;
+  if (systemInfoContext) prefix += systemInfoContext;
+  if (agentInstruction) prefix += agentInstruction;
+  if (toolsContext) prefix += `[Available Tools & Functions]:\n${toolsContext}\n\n`;
+  if (memoryContext) prefix += memoryContext;
+
+  const augmented = prefix ? `${prefix}${request.prompt}` : request.prompt;
   return { augmented, enabledDescriptors };
 }
 
