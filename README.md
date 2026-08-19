@@ -9,14 +9,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/zhu1090093659/deepseek-pp/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/zhu1090093659/deepseek-pp?style=flat-square"></a>
-  <a href="https://github.com/zhu1090093659/deepseek-pp/watchers"><img alt="Watchers" src="https://img.shields.io/github/watchers/zhu1090093659/deepseek-pp?style=flat-square"></a>
-  <a href="https://github.com/zhu1090093659/deepseek-pp/network/members"><img alt="Forks" src="https://img.shields.io/github/forks/zhu1090093659/deepseek-pp?style=flat-square"></a>
-  <a href="https://github.com/zhu1090093659/deepseek-pp/issues"><img alt="Issues" src="https://img.shields.io/github/issues/zhu1090093659/deepseek-pp?style=flat-square"></a>
+  <a href="https://github.com/TaimWay/deepseek-pp-more/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/TaimWay/deepseek-pp-more?style=flat-square"></a>
+  <a href="https://github.com/TaimWay/deepseek-pp-more/watchers"><img alt="Watchers" src="https://img.shields.io/github/watchers/TaimWay/deepseek-pp-more?style=flat-square"></a>
+  <a href="https://github.com/TaimWay/deepseek-pp-more/network/members"><img alt="Forks" src="https://img.shields.io/github/forks/TaimWay/deepseek-pp-more?style=flat-square"></a>
+  <a href="https://github.com/TaimWay/deepseek-pp-more/issues"><img alt="Issues" src="https://img.shields.io/github/issues/TaimWay/deepseek-pp-more?style=flat-square"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/zhu1090093659/deepseek-pp/releases"><img alt="Release" src="https://img.shields.io/github/v/release/zhu1090093659/deepseek-pp?style=flat-square&label=release"></a>
+  <a href="https://github.com/TaimWay/deepseek-pp-more/releases"><img alt="Release" src="https://img.shields.io/github/v/release/TaimWay/deepseek-pp-more?style=flat-square&label=release"></a>
   <a href="https://chromewebstore.google.com/detail/deepseek++/kdmpkkahkhdmdhfkdihkopikgcocbpbf?hl=zh-CN"><img alt="Chrome Web Store" src="https://img.shields.io/badge/Chrome%20Web%20Store-available-16a34a?style=flat-square"></a>
   <a href="#license"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-2563eb?style=flat-square"></a>
   <a href="https://chat.deepseek.com"><img alt="DeepSeek" src="https://img.shields.io/badge/DeepSeek-web-4f46e5?style=flat-square"></a>
@@ -41,6 +41,17 @@ DeepSeek++ 是面向 [DeepSeek](https://chat.deepseek.com) 网页版的开源浏
 语言可设为跟随浏览器、简体中文或 English。DeepSeek++ 会让侧边栏、右键菜单、工具结果、内置 Skill 行为和自动续跑提示保持一致语言，同时保留用户自己写的记忆、预设、自定义 Skill、自动化任务和同步数据原文。
 
 DeepSeek++ More 是一个相对于原版而言更加激进的项目，它提供了开放 API 以供外部 AI 软件通过扩展中转使用 OpenAI 格式的 API 直接调用网页免费 API，只需一个浏览器，就能把他接入到其他 Agent 里（不过还是推荐干一些小活）。
+
+
+## 🔥 DeepSeek++ More 独占特性
+
+由于本项目是基于原版 `DeepSeek++` 的激进增强分支（Fork），我们在原版强大的“工具执行与记忆”底座上，新增了以下独家功能：
+
+- **OpenAI 兼容中转（API Relay）**：内置并打包了 HTTP/WebSocket 中转服务器。你可以让任何支持 OpenAI 接口格式的外部软件（如其他 Agent、IDE 插件），无缝白嫖 DeepSeek 网页版的强大推理能力。
+- **全网右键唤起**：任何页面选中文字，一键右键“问问 DeepSeek”或者直接唤出侧边栏悬浮面板，彻底打破对话窗口的边界。
+- **极致的沉浸式对话 UI**：剥离并隐藏了烦人的底层 XML 工具调用标签，重新设计了清爽的 `> 正在执行操作: [工具名]...` 状态指示器；支持 Github Flavored Markdown（原生表格与 HTML）渲染。
+- **深度模式防火墙突围**：原版 DeepSeek Web 会在 Expert 模式下粗暴屏蔽外部 `http/https` 链接。本项目独家实现了底层链接混淆与协议转义，在工具抓取网页后能完美将结果喂给模型，摆脱降智拦截。
+- **跨平台一键部署包**：发布了专属的 `deepseek-ppmore-ext-apirelay` NPM 包，Windows/Mac/Linux 均可通过一条命令全自动拉起 Native Host 与 Relay 守护进程，并在扩展设置页提供实时的 PID 与可视化连通性监控。
 
 ## 目录
 
@@ -1107,7 +1118,7 @@ Chrome 用户可以直接从 [Chrome Web Store](https://chromewebstore.google.co
 ### 从源码构建
 
 ```bash
-git clone https://github.com/zhu1090093659/deepseek-pp.git
+git clone https://github.com/TaimWay/deepseek-pp-more.git
 cd deepseek-pp
 npm install
 npm run build
