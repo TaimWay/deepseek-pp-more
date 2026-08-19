@@ -1,5 +1,7 @@
 import { useLayoutEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 
 interface RichMessageContentProps {
   text: string;
@@ -11,5 +13,5 @@ export default function RichMessageContent({ text, onRendered }: RichMessageCont
     onRendered?.();
   }, [onRendered]);
 
-  return <ReactMarkdown>{text}</ReactMarkdown>;
+  return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{text}</ReactMarkdown>;
 }

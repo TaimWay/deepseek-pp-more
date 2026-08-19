@@ -390,13 +390,23 @@ export function createChatRuntimeService(
 
       const executions: ToolExecutionRecord[] = [];
       for (const call of toolCalls) executions.push(await executeChatTool(turn, call));
+      
+      let serializedResults = serializeToolExecutions(executions);
+      // DeepSeek Web in expert mode (R1) intercepts raw http:// and https:// URLs in user prompts
+      // and emits "Link reading is unavailable in Expert Mode. Please use Instant Mode."
+      const isWebExpert = await dependencies.getModelType() === 'expert';
+      if (isWebExpert) {
+        serializedResults = serializedResults.replace(/https?:\/\//gi, 'source-url://');
+      }
+
       currentMessages = [
         ...currentMessages,
         {
           role: 'user',
-          content: dependencies.continueWithToolResults(serializeToolExecutions(executions)),
+          content: dependencies.continueWithToolResults(serializedResults),
         },
       ];
+
     }
 
     emitChunk(
