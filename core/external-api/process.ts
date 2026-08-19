@@ -161,7 +161,7 @@ export async function getRelayProcessStatus(port = DEFAULT_EXTERNAL_API_PORT): P
     ).trim();
     const pidMatch = stdout.match(/^(\d+)/m);
     const pid = pidMatch ? parseInt(pidMatch[1], 10) : null;
-    const running = Boolean(pid || stdout.length > 0);
+    const running = Boolean(pid);
 
     return {
       running,

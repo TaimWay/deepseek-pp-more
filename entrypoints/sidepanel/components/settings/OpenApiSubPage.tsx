@@ -257,38 +257,29 @@ main();`;
                 <span>ℹ</span>
                 <span>{t('sidepanel.settings.nativeHostMissingDesc')}</span>
               </div>
-              
-              {/* Native Host Install Guide */}
-              <div className="mt-2 p-2.5 rounded-md" style={{ backgroundColor: 'var(--ds-surface)', border: '1px solid var(--ds-border)' }}>
-                <div className="font-semibold text-[11px] mb-1.5" style={{ color: 'var(--ds-text)' }}>
-                  ⚙️ 终端安装向导 (Mac / Linux / Windows)
-                </div>
-                <div className="text-[10px] mb-2 leading-relaxed" style={{ color: 'var(--ds-text-tertiary)' }}>
-                  请在你的电脑终端中执行以下命令，完成 Native Host 的自动注册：
-                </div>
-                <div className="relative group">
-                  <pre className="text-[10px] p-2 rounded bg-black/5 dark:bg-white/5 overflow-x-auto select-all font-mono" style={{ color: 'var(--ds-text)' }}>
-                    {typeof chrome !== 'undefined' && chrome.runtime?.id
-                      ? `npx deepseek-ppmore-ext-apirelay install --browser ${navigator.userAgent.toLowerCase().includes('firefox') ? 'firefox' : navigator.userAgent.toLowerCase().includes('edg/') ? 'edge' : 'chrome'} --extension-id ${chrome.runtime.id}`
-                      : 'npx deepseek-ppmore-ext-apirelay install --browser chrome --extension-id <your-extension-id>'}
-                  </pre>
-                </div>
-                <div className="text-[10px] mt-2 leading-relaxed" style={{ color: 'var(--ds-text-tertiary)' }}>
-                  安装成功后，请点击右上角的 [刷新] 按钮。
-                </div>
-              </div>
-
-              <code className="block p-2 rounded text-[10px] select-all font-mono" style={{ backgroundColor: 'var(--ds-surface)' }}>
-                {`node packages/shell-host/bin/deepseek-pp-shell-host.mjs install --browser chrome --extension-id ${typeof chrome !== 'undefined' && chrome.runtime?.id ? chrome.runtime.id : '<extension-id>'}`}
-              </code>
-              <div className="text-[10px]" style={{ color: 'var(--ds-text-tertiary)' }}>
-                {t('sidepanel.settings.standaloneModeNotice')}:
-                <code className="block mt-1 p-2 rounded text-[10px] select-all font-mono" style={{ backgroundColor: 'var(--ds-surface)' }}>
-                  {`./ext/api-external-relay/target/release/api-external-relay --host ${state.externalApiConfig.relayHost || '127.0.0.1'} --port ${state.externalApiConfig.relayPort || 3000}`}
-                </code>
-              </div>
             </div>
           )}
+
+          {/* Always show the Native Host Install Guide so users can update it or if they have a broken host */}
+          <div className="mt-2 p-2.5 rounded-md" style={{ backgroundColor: 'var(--ds-surface)', border: '1px solid var(--ds-border)' }}>
+            <div className="font-semibold text-[11px] mb-1.5 flex items-center justify-between" style={{ color: 'var(--ds-text)' }}>
+              <span>⚙️ 终端安装向导 (Mac / Linux / Windows)</span>
+              {state.relayProcessStatus.nativeHostAvailable && <span className="text-[10px] text-green-600 dark:text-green-400 font-normal">已安装</span>}
+            </div>
+            <div className="text-[10px] mb-2 leading-relaxed" style={{ color: 'var(--ds-text-tertiary)' }}>
+              请在你的电脑终端中执行以下命令，完成 Native Host 的自动注册或更新：
+            </div>
+            <div className="relative group">
+              <pre className="text-[10px] p-2 rounded bg-black/5 dark:bg-white/5 overflow-x-auto select-all font-mono" style={{ color: 'var(--ds-text)' }}>
+                {typeof chrome !== 'undefined' && chrome.runtime?.id
+                  ? `npx deepseek-ppmore-ext-apirelay install --browser ${navigator.userAgent.toLowerCase().includes('firefox') ? 'firefox' : navigator.userAgent.toLowerCase().includes('edg/') ? 'edge' : 'chrome'} --extension-id ${chrome.runtime.id}`
+                  : 'npx deepseek-ppmore-ext-apirelay install --browser chrome --extension-id <your-extension-id>'}
+              </pre>
+            </div>
+            <div className="text-[10px] mt-2 leading-relaxed" style={{ color: 'var(--ds-text-tertiary)' }}>
+              配置完成后，请点击右上角的 [刷新] 按钮。
+            </div>
+          </div>
         </div>
 
         <div className="flex gap-2">
