@@ -151,7 +151,7 @@ export async function getRelayProcessStatus(port = DEFAULT_EXTERNAL_API_PORT): P
 
   // With Native Host: check process with lsof / pgrep / ss
   try {
-    const cmd = `lsof -i :${port} -sTCP:LISTEN -t || pgrep -f api-external-relay || ss -tulpn | grep :${port}`;
+    const cmd = `lsof -i :${port} -sTCP:LISTEN -t || pgrep -x api-external-relay || pgrep -f "[a]pi-external-relay"`;
     const result: any = await sendNativeShellCommand(cmd);
     const stdout = (
       result?.structuredContent?.data?.stdout ||
@@ -271,7 +271,7 @@ export async function stopRelayProcess(port = DEFAULT_EXTERNAL_API_PORT): Promis
   }
 
   try {
-    const killCmd = `pkill -f "api-external-relay.*--port ${port}" || kill $(lsof -t -i:${port}) 2>/dev/null || pkill -f "api-external-relay"`;
+    const killCmd = `pkill -f "[a]pi-external-relay.*--port ${port}" || kill $(lsof -t -i:${port}) 2>/dev/null || pkill -x "api-external-relay" || pkill -f "[a]pi-external-relay"`;
     await sendNativeShellCommand(killCmd);
     return { ok: true, message: `Relay process on port ${port} stopped.` };
   } catch (err) {
