@@ -181,31 +181,6 @@ const lineAllowlist = [
     includes: '问问 DeepSeek："%s"',
     reason: 'context menu title for selection ask in background service worker',
   },
-  {
-    path: 'entrypoints/sidepanel/components/settings/OpenApiSubPage.tsx',
-    includes: '刷新状态',
-    reason: 'Native Host installation UI text',
-  },
-  {
-    path: 'entrypoints/sidepanel/components/settings/OpenApiSubPage.tsx',
-    includes: '⚙️ 终端安装向导 (Mac / Linux / Windows)',
-    reason: 'Native Host installation UI text',
-  },
-  {
-    path: 'entrypoints/sidepanel/components/settings/OpenApiSubPage.tsx',
-    includes: '已安装',
-    reason: 'Native Host installation UI text',
-  },
-  {
-    path: 'entrypoints/sidepanel/components/settings/OpenApiSubPage.tsx',
-    includes: '请在你的电脑终端中执行以下命令',
-    reason: 'Native Host installation UI text',
-  },
-  {
-    path: 'entrypoints/sidepanel/components/settings/OpenApiSubPage.tsx',
-    includes: '配置完成后，请点击右上角的 [刷新] 按钮。',
-    reason: 'Native Host installation UI text',
-  },
 ];
 
 assertDeterministicKeyChecks();
