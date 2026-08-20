@@ -206,14 +206,14 @@ export const sidepanel = {
   },
   whatsNew: {
     title: '版本更新内容',
-    subtitle: '本次重点新增浏览器控制，并继续收紧侧边栏反馈、第三方 Skill 管理和权限说明。',
+    subtitle: '该更新不仅提升了原生流式渲染稳定性，还重构了本地 API 中转与 Native Host 安装体验，强化了右键快捷提问，并在侧边栏彻底隐藏工具 XML 标签以增强沉浸感。',
     versionBadge: 'v{version}',
     dismiss: '知道了',
     items: {
-      browserControl: '浏览器控制可在侧边栏选择目标标签页，让 DeepSeek++ 执行可见网页操作。',
-      browserControlBoundary: '浏览器控制默认关闭，启用后只向新会话提供文本快照和浏览器动作工具。',
-      sidepanelFeedback: '保存项、项目和提示词控制增加更明确的成功、失败和不可用状态反馈。',
-      thirdPartySkills: '第三方 Skill 会按来源分组展示，可单独启用、停用、检查更新或同步。',
+      inlineAgent: '内联智能体升级，最终回答改由网页原生渲染，并直接展示 mermaid/xychart 图表卡片。',
+      apiRelay: '开放 API 与中转升级，新增跨平台 NPM 包 deepseek-ppmore-ext-apirelay，一键部署守护进程。',
+      quickAsk: '修复全局右键菜单“问问 DeepSeek”逻辑，支持网页直接划词唤出侧边栏悬浮提问。',
+      uiUx: 'UI 体验增强，侧边栏输出彻底过滤工具 XML 标签；独家绕过 Expert 模式屏蔽网址链接的限制。',
     },
   },
   memoryPage: {

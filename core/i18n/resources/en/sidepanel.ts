@@ -205,15 +205,15 @@ export const sidepanel = {
     operationFailed: 'Saved item action failed: {error}',
   },
   whatsNew: {
-    title: "What's new",
-    subtitle: 'This release adds Browser Control and tightens side-panel feedback, third-party Skill management, and permission copy.',
+    title: 'What\'s New',
+    subtitle: 'This update improves native streaming stability, overhauls the API Relay & Native Host installation, enhances the Quick Ask context menu, and completely hides XML tags in the side panel for a better immersive experience.',
     versionBadge: 'v{version}',
     dismiss: 'Got it',
     items: {
-      browserControl: 'Browser Control can select a target tab from the side panel and perform visible web actions for DeepSeek++.',
-      browserControlBoundary: 'Browser Control stays off by default and only adds text snapshots and browser action tools to new conversations after it is enabled.',
-      sidepanelFeedback: 'Saved items, projects, and prompt controls now show clearer success, failure, and unavailable-state feedback.',
-      thirdPartySkills: 'Third-party Skills are grouped by source and can be enabled, disabled, checked for updates, or synced independently.',
+      inlineAgent: 'Inline Agent upgrade: Final answers are now rendered natively by the web page, supporting mermaid/xychart charts.',
+      apiRelay: 'API Relay overhaul: Added cross-platform NPM package deepseek-ppmore-ext-apirelay for one-click deployment.',
+      quickAsk: 'Fixed global "Ask DeepSeek" context menu logic, allowing text selection to trigger floating chat instantly.',
+      uiUx: 'UI & UX enhancements: Side panel completely hides XML tool tags; exclusive bypass for URL blocks in Expert Mode.',
     },
   },
   memoryPage: {
