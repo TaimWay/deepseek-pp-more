@@ -8,7 +8,19 @@
     "build": "cargo build --release",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["chrome", "extension", "native-messaging", "deepseek"],
+  "keywords": [
+    "chrome",
+    "extension",
+    "native-messaging",
+    "deepseek"
+  ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "files": [
+    "scripts",
+    "src",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md"
+  ]
 }
