@@ -38,10 +38,6 @@ jobs:
             target: aarch64-apple-darwin
             artifact_name: deepseek-pp-host-macos-arm64
             bin_name: deepseek-pp-host
-          - os: macos-13
-            target: x86_64-apple-darwin
-            artifact_name: deepseek-pp-host-macos-amd64
-            bin_name: deepseek-pp-host
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust
