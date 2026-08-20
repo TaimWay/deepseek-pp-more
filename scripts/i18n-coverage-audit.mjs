@@ -146,11 +146,6 @@ const lineAllowlist = [
   },
   {
     path: 'entrypoints/background.ts',
-    includes: '问问 DeepSeek：选中文本',
-    reason: 'context menu title for selection ask in background service worker',
-  },
-  {
-    path: 'entrypoints/background.ts',
     includes: '问问 DeepSeek：解释此网页',
     reason: 'context menu title for page ask in background service worker',
   },
@@ -174,60 +169,17 @@ const lineAllowlist = [
     includes: '语言回复要求',
     reason: 'language consistency instruction injected into external API prompt to prevent English output for Chinese input',
   },
-  {
-    path: 'entrypoints/content/adapters/chat-launcher.ts',
-    includes: '问问 DeepSeek',
-    reason: 'floating chat launcher button title and hover tooltip',
+
+
+    {
+    path: 'entrypoints/background/chat-runtime-service.ts',
+    includes: '> 正在执行操作',
+    reason: 'inline agent tool call status text injection',
   },
   {
-    path: 'entrypoints/content/adapters/chat-launcher.ts',
-    includes: '帮你解释网站',
-    reason: 'floating chat launcher idle suggestion speech bubbles',
-  },
-  {
-    path: 'entrypoints/content/adapters/chat-launcher.ts',
-    includes: '点我询问',
-    reason: 'floating chat launcher idle suggestion speech bubbles',
-  },
-  {
-    path: 'entrypoints/content/adapters/chat-launcher.ts',
-    includes: '有什么想聊的吗？',
-    reason: 'floating chat launcher idle suggestion speech bubbles',
-  },
-  {
-    path: 'entrypoints/content/adapters/chat-launcher.ts',
-    includes: '点击开启快捷问答',
-    reason: 'floating chat launcher idle suggestion speech bubbles',
-  },
-  {
-    path: 'entrypoints/content.ts',
-    includes: 'button[aria-label*="上传"]',
-    reason: 'DeepSeek DOM upload button selector',
-  },
-  {
-    path: 'entrypoints/content.ts',
-    includes: '联网搜索 (扩展)',
-    reason: 'input toolbox extension search toggle chip',
-  },
-  {
-    path: 'entrypoints/content.ts',
-    includes: '启用扩展联网搜索增强',
-    reason: 'input toolbox extension search tooltip',
-  },
-  {
-    path: 'entrypoints/content.ts',
-    includes: '允许调用 Agent Call',
-    reason: 'input toolbox agent call toggle button and tooltip',
-  },
-  {
-    path: 'entrypoints/content.ts',
-    includes: '记忆管理',
-    reason: 'input toolbox memory management button and tooltip',
-  },
-  {
-    path: 'entrypoints/content.ts',
-    includes: '问问 DeepSeek',
-    reason: 'in-page pet hover tooltip',
+    path: 'entrypoints/background.ts',
+    includes: '问问 DeepSeek："%s"',
+    reason: 'context menu title for selection ask in background service worker',
   },
 ];
 

@@ -212,9 +212,7 @@ main();`;
                       onClick={() => state.refreshProcessStatus()}
                       disabled={state.externalApiSaveStatus === 'saving'}
                       className="ds-btn-secondary px-3 py-1.5 text-[11px] font-medium rounded-md transition-all duration-150 mr-1"
-                    >
-                      刷新状态
-                    </button>
+                    >{t('sidepanel.settings.refreshStatus')}</button>
                   {!state.relayProcessStatus.running ? (
                     <button
                       onClick={() => state.handleStartRelayProcess({
@@ -270,11 +268,11 @@ main();`;
           {/* Always show the Native Host Install Guide so users can update it or if they have a broken host */}
           <div className="mt-2 p-2.5 rounded-md" style={{ backgroundColor: 'var(--ds-surface)', border: '1px solid var(--ds-border)' }}>
             <div className="font-semibold text-[11px] mb-1.5 flex items-center justify-between" style={{ color: 'var(--ds-text)' }}>
-              <span>⚙️ 终端安装向导 (Mac / Linux / Windows)</span>
-              {state.relayProcessStatus.nativeHostAvailable && <span className="text-[10px] text-green-600 dark:text-green-400 font-normal">已安装</span>}
+              <span>{t('sidepanel.settings.terminalInstallGuide')}</span>
+              {state.relayProcessStatus.nativeHostAvailable && <span className="text-[10px] text-green-600 dark:text-green-400 font-normal">{t('sidepanel.settings.installed')}</span>}
             </div>
             <div className="text-[10px] mb-2 leading-relaxed" style={{ color: 'var(--ds-text-tertiary)' }}>
-              请在你的电脑终端中执行以下命令，完成 Native Host 的自动注册或更新：
+              {t('sidepanel.settings.runInstallCommandPrompt')}
             </div>
             <div className="relative group">
               <pre className="text-[10px] p-2 rounded bg-black/5 dark:bg-white/5 overflow-x-auto select-all font-mono" style={{ color: 'var(--ds-text)' }}>
@@ -284,7 +282,7 @@ main();`;
               </pre>
             </div>
             <div className="text-[10px] mt-2 leading-relaxed" style={{ color: 'var(--ds-text-tertiary)' }}>
-              配置完成后，请点击右上角的 [刷新] 按钮。
+              {t('sidepanel.settings.clickRefreshAfterConfig')}
             </div>
           </div>
         </div>
