@@ -71,8 +71,8 @@ describe('WhatsNewPanel', () => {
 
     expect(container.textContent).toContain('版本更新内容');
     expect(container.textContent).toContain('v0.7.2');
-    expect(container.textContent).toContain('浏览器控制可在侧边栏选择目标标签页');
-    expect(container.textContent).toContain('第三方 Skill 会按来源分组展示');
+    expect(container.textContent).toContain('内联智能体升级');
+    expect(container.textContent).toContain('开放 API 与中转升级');
 
     const button = container.querySelector('button');
     expect(button?.textContent).toBe('知道了');
