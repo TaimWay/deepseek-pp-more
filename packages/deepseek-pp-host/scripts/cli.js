@@ -15,7 +15,7 @@ if (command === 'install') {
 } else {
   console.log(`
 Usage:
-  npx deepseek-ppmore-ext-apirelay install --browser chrome --extension-id <ID>
-  npx deepseek-ppmore-ext-apirelay build
+  deepseek-ppmore-ext-apirelay install --browser chrome --extension-id <ID>
+  deepseek-ppmore-ext-apirelay build
   `);
 }

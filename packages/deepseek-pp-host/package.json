@@ -1,6 +1,6 @@
 {
   "name": "deepseek-ppmore-ext-apirelay",
-  "version": "1.15.1",
+  "version": "1.15.2",
   "description": "Chrome Native Messaging Host for DeepSeek++",
   "main": "scripts/install.js",
   "bin": {
