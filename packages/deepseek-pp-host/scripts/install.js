@@ -40,7 +40,16 @@ const isMac = platform === 'darwin';
 const isLinux = platform === 'linux';
 
 const rustBinaryExt = isWindows ? '.exe' : '';
-const binaryPath = path.join(__dirname, '..', 'target', 'release', `deepseek-pp-host${rustBinaryExt}`);
+const home = os.homedir();
+let installRoot = '';
+if (isWindows) {
+  installRoot = path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'DeepSeek++', 'ApiRelayHost');
+} else if (isMac) {
+  installRoot = path.join(home, 'Library', 'Application Support', 'DeepSeek++', 'ApiRelayHost');
+} else {
+  installRoot = path.join(home, '.local', 'share', 'deepseek-pp', 'api-relay-host');
+}
+const binaryPath = path.join(installRoot, `deepseek-pp-host${rustBinaryExt}`);
 
 const manifest = {
   name: HOST_NAME,
@@ -61,7 +70,7 @@ function getManifestPaths() {
     if (targetBrowser === 'firefox') return [path.join(home, '.mozilla/native-messaging-hosts', `${HOST_NAME}.json`)];
     return [path.join(home, '.config/google-chrome/NativeMessagingHosts', `${HOST_NAME}.json`)];
   } else if (isWindows) {
-    return [path.join(__dirname, '..', `${HOST_NAME}.json`)];
+    return [path.join(installRoot, `${HOST_NAME}.json`)];
   }
   return [];
 }
@@ -134,6 +143,13 @@ async function ensureBinary() {
     console.log('Attempting to fallback to local cargo build...');
     try {
       execSync('cargo build --release', { cwd: path.join(__dirname, '..'), stdio: 'inherit' });
+      const localBuiltPath = path.join(__dirname, '..', 'target', 'release', `deepseek-pp-host${rustBinaryExt}`);
+      if (fs.existsSync(localBuiltPath)) {
+        fs.copyFileSync(localBuiltPath, binaryPath);
+        if (!isWindows) fs.chmodSync(binaryPath, 0o755);
+      } else {
+        throw new Error('Local build succeeded but binary not found.');
+      }
     } catch (buildErr) {
       console.error('❌ Local build also failed.', buildErr.message);
       process.exit(1);
