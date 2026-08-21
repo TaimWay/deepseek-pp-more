@@ -72,12 +72,14 @@ const https = require('https');
 
 function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
     https.get(url, (response) => {
       if (response.statusCode === 301 || response.statusCode === 302) {
         // Handle redirects
+        response.resume(); // consume the body to close connection
         downloadFile(response.headers.location, dest).then(resolve).catch(reject);
-      } else if (response.statusCode !== 200) {
+      } else {
+        const file = fs.createWriteStream(dest);
+        if (response.statusCode !== 200) { else if (response.statusCode !== 200) {
         reject(new Error(`Failed to download, status code: ${response.statusCode}`));
       } else {
         response.pipe(file);
