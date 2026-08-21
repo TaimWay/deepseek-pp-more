@@ -1,0 +1,14 @@
+$ npx deepseek-ppmore-ext-apirelay install --browser chrome --extension-id emgohabmgkakgaemkafhcdagbnokiael
+Need to install the following packages
+deepseek-ppmore-ext-apirelay@0.2.0
+Ok to proceed (y) y
+npm notice run npx
+npm notice run deepseek-ppmore-ext-apirelay install --browser chrome --extension-id emgohabmgkakgaemkafhcdagbnokiael
+Installing DeepSeek++ Native Host...
+Rust binary not found locally. Attempting to download pre-compiled binary...
+Downloading from httpsgithub.comTaimWaydeepseek-pp-morereleaseslatestdownloaddeepseek-pp-host-windows-amd64.exe
+❌ Failed to download binary Failed to download, status code 404
+Attempting to fallback to local cargo build...
+'cargo' 不是内部或外部命令，也不是可运行的程序
+或批处理文件。
+❌ Local build also failed. Command failed cargo build --release

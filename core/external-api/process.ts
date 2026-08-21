@@ -226,7 +226,7 @@ export async function startRelayProcess(options: {
     const startCmd = isWindows ? `powershell.exe -NoProfile -Command "
 \$relayBin = if (Test-Path ~\\dev\\TaimWay\\deepseek-pp-more\\ext\\api-external-relay\\target\\release\\api-external-relay.exe) { ~\\dev\\TaimWay\\deepseek-pp-more\\ext\\api-external-relay\\target\\release\\api-external-relay.exe } else { (Get-Command api-external-relay.exe -ErrorAction SilentlyContinue).Source }
 if (-not \$relayBin) { Write-Output 'RELAY_NOT_FOUND'; exit 0 }
-\$proc = Start-Process -FilePath \$relayBin -ArgumentList '${argsStr}' -PassThru -WindowStyle Hidden
+\$proc = Start-Process -FilePath \$relayBin -ArgumentList '${argsStr}' -RedirectStandardOutput \"\$env:TEMP\\deepseek-pp-relay.log\" -RedirectStandardError \"\$env:TEMP\\deepseek-pp-relay.log\" -PassThru -WindowStyle Minimized
 Write-Output \$proc.Id
 "`.trim() : `
 if [ -x "$HOME/dev/TaimWay/deepseek-pp-more/ext/api-external-relay/target/release/api-external-relay" ]; then

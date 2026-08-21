@@ -41,3 +41,4 @@ docs/archives/*
 !docs/archives/deepseek-official-conversation-export/**
 !docs/archives/better-deepseek-capability-adoption/
 !docs/archives/better-deepseek-capability-adoption/**
+ext/api-external-relay/target/
