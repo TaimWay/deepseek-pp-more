@@ -74,23 +74,25 @@ function downloadFile(url, dest) {
   return new Promise((resolve, reject) => {
     https.get(url, (response) => {
       if (response.statusCode === 301 || response.statusCode === 302) {
-        // Handle redirects
-        response.resume(); // consume the body to close connection
+        response.resume();
         downloadFile(response.headers.location, dest).then(resolve).catch(reject);
       } else {
         const file = fs.createWriteStream(dest);
-        if (response.statusCode !== 200) { else if (response.statusCode !== 200) {
-        reject(new Error(`Failed to download, status code: ${response.statusCode}`));
-      } else {
-        response.pipe(file);
-        file.on('finish', () => {
-          file.close(() => {
-            if (!isWindows) {
-              fs.chmodSync(dest, 0o755);
-            }
-            resolve();
+        if (response.statusCode !== 200) {
+          file.close();
+          fs.unlink(dest, () => {});
+          reject(new Error(`Failed to download, status code: ${response.statusCode}`));
+        } else {
+          response.pipe(file);
+          file.on('finish', () => {
+            file.close(() => {
+              if (!isWindows) {
+                fs.chmodSync(dest, 0o755);
+              }
+              resolve();
+            });
           });
-        });
+        }
       }
     }).on('error', (err) => {
       fs.unlink(dest, () => {});
