@@ -3,7 +3,7 @@
   "description": "Agentic memory, skills, agentic execution, automation, and MCP tools for DeepSeek",
   "private": true,
   "license": "Apache-2.0",
-  "version": "1.15.6",
+  "version": "1.15.7",
   "type": "module",
   "workspaces": [
     "packages/*"

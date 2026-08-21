@@ -46,16 +46,21 @@ jobs:
           targets: ${{ matrix.target }}
       - name: Build
         working-directory: packages/deepseek-pp-host
-        run: cargo build --release --target ${{ matrix.target }}
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          cargo build --release --target ${{ matrix.target }} --manifest-path ext/api-external-relay/Cargo.toml
       - name: Rename binary
         shell: bash
         run: |
           mv "packages/deepseek-pp-host/target/${{ matrix.target }}/release/${{ matrix.bin_name }}" "packages/deepseek-pp-host/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}"
+          mv "ext/api-external-relay/target/${{ matrix.target }}/release/${{ matrix.bin_name }}" "packages/deepseek-pp-host/target/${{ matrix.target }}/release/api-external-relay-${{ matrix.target }}${{ matrix.target == 'x86_64-pc-windows-msvc' && '.exe' || '' }}"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: packages/deepseek-pp-host/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+          path: |
+            packages/deepseek-pp-host/target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+            packages/deepseek-pp-host/target/${{ matrix.target }}/release/api-external-relay*
 
   release:
     needs: build-relay
