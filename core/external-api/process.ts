@@ -223,8 +223,7 @@ export async function startRelayProcess(options: {
     if (options.tls) argsArray.push('--tls');
     const argsStr = argsArray.join(' ');
 
-        const pwshScript = `
-$relayBin = if (Test-Path ~\\dev\\TaimWay\\deepseek-pp-more\\ext\\api-external-relay\\target\\release\\api-external-relay.exe) { ~\\dev\\TaimWay\\deepseek-pp-more\\ext\\api-external-relay\\target\\release\\api-external-relay.exe } else { (Get-Command api-external-relay.exe -ErrorAction SilentlyContinue).Source }
+        const pwshScript = `$relayBin = if (Test-Path (Join-Path $env:LOCALAPPDATA 'DeepSeek++\ApiRelayHost\api-external-relay.exe')) { Join-Path $env:LOCALAPPDATA 'DeepSeek++\ApiRelayHost\api-external-relay.exe' } elseif (Test-Path ~\\dev\\TaimWay\\deepseek-pp-more\\ext\\api-external-relay\\target\\release\\api-external-relay.exe) { ~\\dev\\TaimWay\\deepseek-pp-more\\ext\\api-external-relay\\target\\release\\api-external-relay.exe } else { (Get-Command api-external-relay.exe -ErrorAction SilentlyContinue).Source }\\deepseek-pp-more\\ext\\api-external-relay\\target\\release\\api-external-relay.exe) { ~\\dev\\TaimWay\\deepseek-pp-more\\ext\\api-external-relay\\target\\release\\api-external-relay.exe } else { (Get-Command api-external-relay.exe -ErrorAction SilentlyContinue).Source }
 if (-not $relayBin) { Write-Output 'RELAY_NOT_FOUND'; exit 0 }
 $log = Join-Path $env:TEMP 'deepseek-pp-relay.log'
 $proc = Start-Process -FilePath $relayBin -ArgumentList '${argsStr}' -RedirectStandardOutput $log -RedirectStandardError $log -PassThru -WindowStyle Minimized
